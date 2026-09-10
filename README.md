@@ -19,7 +19,7 @@ Slice-by-slice build. See [openspec/ROADMAP.md](./openspec/ROADMAP.md) for what 
 | Slice | Name | Status |
 |---|---|---|
 | 001 | Scaffold monorepo | done |
-| 002 | Mock target app "Legacy CU Core" | planned |
+| 002 | Mock target app "Legacy CU Core" | done |
 | 003 | Capability artifact schema | planned |
 | 004 | Surface abstraction and perception | planned |
 | 005 | LLM discovery loop and recorder | planned |
@@ -51,6 +51,35 @@ cp .env.example .env
 | `CUA_MODEL` | discovery | default `claude-sonnet-5` |
 | `TARGET_APP_URL`, `TARGET_USER`, `TARGET_PASSWORD` | discovery, replay | mock app defaults: `http://localhost:4100`, `demo` / `demo` |
 | `CUA_HEADLESS` | both | `false` to watch the browser |
+
+## Run the target app
+
+The automation target is a mock credit-union back-office app, **Legacy CU Core**, built to look
+like the real thing: a frameset shell, table layouts, no element ids, inline `onclick` handlers,
+labels as adjacent cells, and a native `confirm()` on the one irreversible step.
+
+```bash
+pnpm dev:target          # http://localhost:4100  sign in with demo / demo
+```
+
+Flow: Sign In → Member Search → Member Detail (balances) → Open New Sub-Account → Review and
+Confirm → Sub-Account Opened. Members: 10042, 10077, 10101, 10233, 10999 (synthetic data only).
+
+**Fault injection** lets you trigger every runtime error class on demand. Add `?fault=<name>` to
+a request (that request only) or arm a one-shot fault for a later request at
+`http://localhost:4100/__faults` (tick *Sticky* to keep it firing).
+
+| fault | fires at |
+|---|---|
+| `not_found` | member search results |
+| `validation` | sub-account form submit |
+| `permission_denied` | member detail page (403) |
+| `session_expired` | any authenticated page (redirects to sign-in) |
+| `unexpected_dialog` | next page render (native alert) |
+| `slow` | any page (6 s delay, `TARGET_FAULT_SLOW_MS` to change) |
+| `server_error` | any authenticated page (500) |
+
+`POST /__reset` restores the seed data.
 
 ## Demo path
 
