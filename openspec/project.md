@@ -74,3 +74,11 @@ policy.yaml            allowlist + risk rules
 
 Desktop surface (interface only), multi-tenant (design + optional `variant` flag in mock),
 console auth, database storage, LLM-assisted replay recovery.
+
+## Demo sandbox controls (added 2026-09-11)
+
+The operator console doubles as a demo gateway: a pre-filled entry gate (demo portal URL, goals
+G1/G2, parameters), an activity shell (live events, artifact being built, replay step progress),
+and a **scenario panel** that injects corner cases into the *live automation session*: each
+fault of the mock app, "force human intervention" (pause now → take control → hand back →
+resume), and "abort". Implemented by slice 007 (server API) and slice 008 (UI).

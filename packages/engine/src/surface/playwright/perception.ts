@@ -8,6 +8,9 @@ import type { CDPSession, Page } from "playwright";
 import type { ElementSummary } from "@cua/schema";
 import { allFrames, framePath } from "./frames.js";
 
+/** Non-interactive roles that make good screen-signature landmarks (headers, tabs, table captions). */
+export const LANDMARK_ROLES = new Set(["heading", "cell", "columnheader", "rowheader", "tab", "banner", "caption", "StaticText"]);
+
 export const INTERACTIVE_ROLES = new Set([
   "button", "link", "textbox", "searchbox", "combobox", "listbox", "checkbox", "radio", "switch",
   "menuitem", "menuitemcheckbox", "menuitemradio", "tab", "slider", "spinbutton", "option", "treeitem",
@@ -94,6 +97,46 @@ export async function perceiveElements(cdp: CDPSession, frames: PerceivedFrame[]
     const { area: _area, ...rest } = e;
     return { index, ...rest };
   });
+}
+
+export interface LandmarkSummary { role: string; name: string; frame: string[]; bbox: [number, number, number, number] }
+
+/**
+ * Landmarks: short, distinctive non-interactive texts in reading order (section headers, table
+ * captions). Used to build screen signatures. Capped and de-duplicated by name per frame.
+ */
+export async function perceiveLandmarks(cdp: CDPSession, frames: PerceivedFrame[], viewport: { width: number; height: number }, max = 20): Promise<LandmarkSummary[]> {
+  const out: LandmarkSummary[] = [];
+  for (const frame of frames) {
+    let nodes: AXNode[];
+    try {
+      ({ nodes } = (await cdp.send("Accessibility.getFullAXTree", { frameId: frame.cdpFrameId })) as { nodes: AXNode[] });
+    } catch {
+      continue;
+    }
+    const seen = new Set<string>();
+    const perFrame: LandmarkSummary[] = [];
+    for (const n of nodes) {
+      const role = n.role?.value ?? "";
+      const name = n.name?.value?.trim() ?? "";
+      if (n.ignored || !LANDMARK_ROLES.has(role) || n.backendDOMNodeId === undefined) continue;
+      if (name.length < 2 || name.length > 40 || /^[\d$,.\-\s]+$/.test(name) || seen.has(name)) continue;
+      let box: [number, number, number, number];
+      try {
+        const bm = (await cdp.send("DOM.getBoxModel", { backendNodeId: n.backendDOMNodeId })) as { model: { content: number[] } };
+        const q = bm.model.content;
+        box = [Math.round(q[0]!), Math.round(q[1]!), Math.round(q[2]! - q[0]!), Math.round(q[5]! - q[1]!)];
+      } catch {
+        continue;
+      }
+      if (box[2] <= 0 || box[3] <= 0 || box[1] > viewport.height) continue;
+      seen.add(name);
+      perFrame.push({ role: role === "StaticText" ? "text" : role, name, frame: frame.path, bbox: box });
+    }
+    perFrame.sort((a, b) => a.bbox[1] - b.bbox[1] || a.bbox[0] - b.bbox[0]);
+    out.push(...perFrame);
+  }
+  return out.slice(0, max);
 }
 
 export function isSensitiveName(name: string): boolean {

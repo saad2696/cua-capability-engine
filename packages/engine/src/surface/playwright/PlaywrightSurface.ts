@@ -7,12 +7,13 @@
  * Dialogs are surfaced, never auto-dismissed. New pages are reported to a policy hook.
  */
 import { chromium, type Browser, type BrowserContext, type CDPSession, type Dialog, type ElementHandle, type Frame, type Page } from "playwright";
-import type { ElementSummary, Locator } from "@cua/schema";
+import type { ElementSummary, ExtractionCandidate, Locator } from "@cua/schema";
 import type { ActResult, DialogInfo, FrameInfo, Observation, Resolved, Surface, SurfaceAction, Target, TextReadResult } from "../types.js";
 import { captureLocatorFor } from "./capture.js";
+import { extractByCandidate } from "./extract.js";
 import { findFrame, frameOffset, allFrames } from "./frames.js";
 import { withMarks } from "./marks.js";
-import { perceiveElements, perceiveFrames } from "./perception.js";
+import { perceiveElements, perceiveFrames, perceiveLandmarks } from "./perception.js";
 import { resolveLocator, type ResolvedHandle } from "./resolver.js";
 
 export interface PlaywrightSurfaceOptions {
@@ -122,7 +123,7 @@ export class PlaywrightSurface implements Surface {
       // scripts cannot run while a dialog blocks the page; report the dialog on top of the last observation
       const base = this.lastObservation;
       const obs: Observation = {
-        at, url: this.page.url(), title: base?.title ?? "", frames: base?.frames ?? [], elements: base?.elements ?? [],
+        at, url: this.page.url(), title: base?.title ?? "", frames: base?.frames ?? [], landmarks: base?.landmarks ?? [], elements: base?.elements ?? [],
         screenshotPng: base?.screenshotPng ?? Buffer.alloc(0), rawScreenshotPng: base?.rawScreenshotPng ?? Buffer.alloc(0),
         viewport: this.viewport, dialog: this.dialog.info, ...(this.lastStatus !== undefined ? { lastHttpStatus: this.lastStatus } : {}),
       };
@@ -135,10 +136,11 @@ export class PlaywrightSurface implements Surface {
       frameInfos.push({ path: f.path, url: f.url, offset: pw ? await frameOffset(pw) : { x: 0, y: 0 } });
     }
     const elements = await perceiveElements(this.cdp, frames, this.viewport);
+    const landmarks = await perceiveLandmarks(this.cdp, frames, this.viewport);
     const rawScreenshotPng = await this.page.screenshot({ type: "png" });
     const screenshotPng = await withMarks(this.page, elements, () => this.page.screenshot({ type: "png" }));
     const obs: Observation = {
-      at, url: this.page.url(), title: await this.page.title().catch(() => ""), frames: frameInfos, elements, screenshotPng, rawScreenshotPng,
+      at, url: this.page.url(), title: await this.page.title().catch(() => ""), frames: frameInfos, landmarks, elements, screenshotPng, rawScreenshotPng,
       viewport: this.viewport, ...(this.lastStatus !== undefined ? { lastHttpStatus: this.lastStatus } : {}),
     };
     this.lastObservation = obs;
@@ -295,6 +297,11 @@ export class PlaywrightSurface implements Surface {
     if (!r) return null;
     const text = r.pw ? await r.pw.innerText().catch(() => "") : "";
     return { text: text.replace(/\s+/g, " ").trim(), bbox: r.bbox };
+  }
+
+  async extract(candidate: ExtractionCandidate, defaultFrame?: string[]): Promise<string | null> {
+    if (this.dialog) return null;
+    return extractByCandidate(this.page, candidate, defaultFrame);
   }
 
   async visibleText(frame?: string[]): Promise<string> {

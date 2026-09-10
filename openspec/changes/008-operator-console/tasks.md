@@ -7,3 +7,8 @@
 - [ ] 8.6 Artifact viewer + approve
 - [ ] 8.7 `pnpm dev:console`; README "Operator console" section with screenshots
 - [ ] 8.8 Manual E2E: G2 discovery pauses at confirm, operator takes control, confirms, hands back, run completes; optional GIF for evidence
+- [ ] 8.9 "New run" form on the Runs page: goal, target URL, params, Discover / Replay (choose saved capability); runs start from the console via the server API
+- [ ] 8.10 `pnpm demo`: one command starts target app + engine server + console and opens http://localhost:4300 (the demo gateway)
+- [ ] 8.11 Entry gate: landing page pre-filled with the demo portal URL, demo goals (G1 read-only, G2 risky), and parameters; one click starts discovery or replay
+- [ ] 8.12 Activity shell: live event stream grouped by phase (observe / decide / act / record / replay step), artifact "building" view that fills in steps as they are recorded, replay step-by-step progress with pass/fail/recover badges
+- [ ] 8.13 Scenario panel: buttons to inject each fault (not found, validation, permission denied, session expired, unexpected dialog, slow, server error) into the live session, and "Force human intervention" (pause now) — wired to the 7.11 API

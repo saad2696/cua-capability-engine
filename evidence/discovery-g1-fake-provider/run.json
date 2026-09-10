@@ -1,0 +1,24 @@
+{
+  "runId": "discover-2026-09-10191-0ed5b5",
+  "status": "completed",
+  "goal": "Look up member {memberId} and read the current savings balance",
+  "params": {
+    "memberId": {
+      "kind": "param",
+      "name": "memberId"
+    }
+  },
+  "artifactPath": "/tmp/cua-offline-artifacts/member-savings-balance-offline@1.json",
+  "stepsTaken": 7,
+  "prunedSteps": 0,
+  "usage": {
+    "provider": "fake",
+    "model": "scripted",
+    "calls": 7,
+    "inputTokens": 0,
+    "outputTokens": 0
+  },
+  "evidenceDir": "evidence/discovery-g1-fake-provider",
+  "startedAt": "2026-09-10T19:11:11.533Z",
+  "finishedAt": "2026-09-10T19:11:13.728Z"
+}

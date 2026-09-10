@@ -5,7 +5,7 @@
  * PlaywrightSurface is the web implementation. A DesktopSurface would implement the same
  * interface on top of an OS accessibility API plus a screen grab.
  */
-import type { BBox, ElementSummary, Locator, LocatorStrategy } from "@cua/schema";
+import type { BBox, ElementSummary, ExtractionCandidate, Locator, LocatorStrategy } from "@cua/schema";
 
 export type { ElementSummary };
 
@@ -29,6 +29,8 @@ export interface Observation {
   url: string;
   title: string;
   frames: FrameInfo[];
+  /** Distinctive non-interactive texts (headers, captions) for screen signatures. */
+  landmarks: { role: string; name: string; frame: string[]; bbox: BBox }[];
   /** Interactive elements from the accessibility tree, numbered for the model. */
   elements: ElementSummary[];
   /** PNG with numbered marks drawn over `elements`. */
@@ -89,6 +91,8 @@ export interface Surface {
   captureLocator(elementIndex: number): Promise<Locator>;
   /** Read text at a locator (for extraction). */
   readText(locator: Locator): Promise<TextReadResult | null>;
+  /** Re-read a value deterministically by extraction candidate; null when the strategy finds nothing. */
+  extract(candidate: ExtractionCandidate, defaultFrame?: string[]): Promise<string | null>;
   /** Visible text of a frame (or the whole page when path is undefined). */
   visibleText(frame?: string[]): Promise<string>;
   /** Is a role+name landmark visible in the given frame? */

@@ -1,0 +1,25 @@
+{
+  "runId": "discover-2026-09-10191-b88ca3",
+  "status": "completed",
+  "goal": "Look up member {memberId} and read the current balance of their Savings account.",
+  "params": {
+    "memberId": {
+      "kind": "param",
+      "name": "memberId"
+    }
+  },
+  "artifactPath": "artifacts/member-savings-balance@1.json",
+  "stepsTaken": 8,
+  "prunedSteps": 0,
+  "usage": {
+    "provider": "anthropic",
+    "model": "claude-sonnet-5",
+    "calls": 8,
+    "inputTokens": 30754,
+    "outputTokens": 1049,
+    "estimatedCostUsd": 0.071998
+  },
+  "evidenceDir": "evidence/discovery-g1-savings-balance",
+  "startedAt": "2026-09-10T19:13:57.528Z",
+  "finishedAt": "2026-09-10T19:14:18.376Z"
+}

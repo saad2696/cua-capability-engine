@@ -32,7 +32,47 @@ it into view; typing is fill-and-verify with a keyboard fallback; selects use th
 the point. This keeps action semantics identical across "by element number" (discovery) and "by
 locator" (replay) and mirrors how a desktop adapter would act.
 
+**Discovery loop (slice 005).** One model call per step, each a fresh user message: goal,
+parameters by placeholder, compact history (last 3 steps verbatim, older ones as one token each),
+notices from the previous turn, the numbered element list, and the marked screenshot. We do not
+accumulate tool_use/tool_result pairs, so the token budget per turn is bounded regardless of run
+length; the frozen system prompt is cache-marked. The model has nine tools, one call per turn
+(`disable_parallel_tool_use`). Placeholders are the key safety idea: the model types `{memberId}`
+or `{TARGET_PASSWORD}`, the engine substitutes, and the value never appears in the transcript.
+Extraction is a dialogue with the engine, not a free-text read: the model says what it sees and
+where (row label, column header, adjacent label) and the engine immediately verifies that a
+deterministic strategy re-reads the same value; if not, the model is told exactly what is missing.
+
+**Recorder.** The trace becomes an artifact by (1) classifying typed values into `param`/`secret`
+references using the placeholder the model actually typed, (2) building a screen signature per
+step from the landmarks visible before it, (3) inferring `expect` from what changed after it (URL
+pattern, new landmark, dialog) and choosing a matching condition-based wait, (4) splitting the
+sign-in into a `login` prelude (everything through the first click after the last secret typed),
+(5) pruning detours by screen-state key (a loop back to a seen screen is dropped unless it
+contained data entry or extraction; no-op clicks are dropped), (6) turning verified extraction
+candidates into typed outputs, and (7) seeding the outcome catalog from vendor defaults plus any
+`error_seen` the model reported.
+
+**Real run.** `evidence/discovery-g1-savings-balance/`: Claude Sonnet 5, 8 calls, 21 s, about
+$0.07, producing `artifacts/member-savings-balance@1.json`. The third attempt was the one kept;
+the first two taught us the lessons below.
+
 **Problems met and how they were approached.**
+- *Parameter values leaking through side channels.* The first real artifact contained the member
+  id in three places we had not anticipated: the model's free-text `description`, an extraction
+  anchor (the model chose the account number `10042-02`, which embeds the member id), and a
+  page-header landmark ("Operator: demo") that carried the secret. Fixes: all free text is
+  scrubbed back to placeholders; landmarks and extraction anchors containing any parameter or
+  secret value are rejected; when the model's anchor is contaminated, the engine derives clean
+  anchors from the label's tokens and tells the model why. A test now asserts no parameter or
+  secret value appears anywhere in the artifact or the event log.
+- *The model repeating a successful extract.* After a verified extract the model called extract
+  again with identical arguments, and loop detection ended the run. Now a successful extract
+  produces an explicit notice ("recorded; call done"), identical repeats are no-ops that do not
+  count as a dead end, and the recorder keeps the first extract per output.
+- *Two secrets with the same value.* Demo credentials are both `demo`; deriving references by
+  value mapped the password step to the user secret. The placeholder the model typed is now the
+  authoritative reference, value matching only a fallback.
 - *Dialogs block everything.* A native `alert()` raised during load blocks the `load` event, so a
   naive `goto(url, load)` hangs forever. Navigation now waits for "commit" and then races
   `load` against dialog appearance; observation reports the dialog on top of the last known

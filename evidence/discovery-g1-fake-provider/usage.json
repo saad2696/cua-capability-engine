@@ -1,0 +1,7 @@
+{
+  "provider": "fake",
+  "model": "scripted",
+  "calls": 7,
+  "inputTokens": 0,
+  "outputTokens": 0
+}

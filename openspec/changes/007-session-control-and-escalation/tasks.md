@@ -9,3 +9,4 @@
 - [ ] 7.8 HTTP + WS server (Fastify or Express + ws), localhost only, SSE for events
 - [ ] 7.9 `cua serve` and headless curl demo: pause a replay, take control via WS client script, hand back
 - [ ] 7.10 Tests: state machine transitions; lease rejection; intervention timeout; disconnect grace; resume same/next/abort
+- [ ] 7.11 Scenario API for demos: `POST /runs/:id/scenario {fault}` sets the target app's fault cookie inside the automation browser context (one-shot or sticky) so the next step of the live run hits it; `POST /runs/:id/pause` forces an intervention (reason MANUAL_PAUSE)

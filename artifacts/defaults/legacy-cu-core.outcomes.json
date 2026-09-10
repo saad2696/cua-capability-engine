@@ -1,0 +1,10 @@
+[
+  { "code": "MEMBER_NOT_FOUND", "kind": "business", "message": "No member exists with this member ID.", "detect": [{ "kind": "textMatches", "pattern": "No member found" }], "appliesTo": "any", "maxRecoveries": 1, "escalate": false },
+  { "code": "INVALID_MEMBER_ID", "kind": "business", "message": "The member ID was rejected by the application.", "detect": [{ "kind": "textMatches", "pattern": "must be exactly five digits" }], "appliesTo": "any", "maxRecoveries": 1, "escalate": false },
+  { "code": "VALIDATION_ERROR", "kind": "business", "message": "The application rejected the submitted form.", "detect": [{ "kind": "textMatches", "pattern": "is required|must be|Select a valid|VAL-\\d+", "flags": "i" }], "appliesTo": "any", "maxRecoveries": 1, "escalate": false },
+  { "code": "PERMISSION_DENIED", "kind": "business", "message": "The operator account is not authorized for this function.", "detect": [{ "kind": "textMatches", "pattern": "not authorized", "flags": "i" }], "appliesTo": "any", "maxRecoveries": 1, "escalate": false },
+  { "code": "SESSION_EXPIRED", "kind": "recoverable", "message": "The operator session expired; signing in again.", "detect": [{ "kind": "urlMatches", "pattern": "/login", "scope": "frame" }], "appliesTo": "any", "recover": "prelude:login", "maxRecoveries": 1, "escalate": false },
+  { "code": "MAINTENANCE_NOTICE", "kind": "recoverable", "message": "Known maintenance banner dialog; dismissed.", "detect": [{ "kind": "dialogOpen", "dialogType": "alert", "messageMatches": "System maintenance" }], "appliesTo": "any", "recover": "dismissDialog", "maxRecoveries": 2, "escalate": false },
+  { "code": "SERVER_ERROR", "kind": "recoverable", "message": "The application returned a server error; retrying.", "detect": [{ "kind": "textMatches", "pattern": "System Error" }], "appliesTo": "any", "recover": "retry", "maxRecoveries": 2, "escalate": false },
+  { "code": "UNKNOWN_DIALOG", "kind": "failure", "message": "An undeclared dialog appeared.", "detect": [{ "kind": "dialogOpen" }], "appliesTo": "any", "maxRecoveries": 1, "escalate": true }
+]

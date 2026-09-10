@@ -19,3 +19,10 @@ The console SHALL render an artifact's contract, steps with locator candidates a
 #### Scenario: Approve
 - **WHEN** the operator approves `member-savings-balance@1`
 - **THEN** the file status becomes `approved` and unattended replay is permitted
+
+### Requirement: Demo scenario controls
+The console SHALL let an operator inject any declared fault into the live automation session and force a human intervention, and the run SHALL react on its next step.
+
+#### Scenario: Inject session expiry during replay
+- **WHEN** the operator clicks "Session expired" while a replay is running
+- **THEN** the next step hits the login redirect, the replay records a `SESSION_EXPIRED` recovery, and the console shows the recovery badge

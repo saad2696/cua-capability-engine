@@ -21,6 +21,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.124.0",
     "@cua/schema": "workspace:*",
     "playwright": "^1.63.0"
   },

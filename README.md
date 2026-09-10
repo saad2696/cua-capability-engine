@@ -22,7 +22,7 @@ Slice-by-slice build. See [openspec/ROADMAP.md](./openspec/ROADMAP.md) for what 
 | 002 | Mock target app "Legacy CU Core" | done |
 | 003 | Capability artifact schema | done |
 | 004 | Surface abstraction and perception | done |
-| 005 | LLM discovery loop and recorder | planned |
+| 005 | LLM discovery loop and recorder | done |
 | 006 | Deterministic replay | planned |
 | 007 | Session control and escalation | planned |
 | 008 | Operator console | planned |
@@ -110,20 +110,58 @@ dialog state). A sample is committed at `evidence/observe-legacy-cu-core-login/`
 
 ## Demo path
 
-_Filled in as the slices land. Final form will be:_
-
 ```bash
-pnpm dev:target                                   # 1. start the mock bank app
-pnpm cua discover --goal "..." --url ... --param memberId=10042   # 2. LLM discovers, artifact saved
-pnpm cua replay artifacts/member-savings-balance@1.json --param memberId=10042   # 3. deterministic replay
-pnpm cua replay ... --param memberId=99999        # 4. business outcome: MEMBER_NOT_FOUND
-pnpm cua serve && pnpm dev:console                # 5. escalation + human takeover demo
+# 1. start the mock bank app (leave it running)
+pnpm dev:target
+
+# 2. LLM-driven discovery: Claude drives the UI, the run is recorded as a capability artifact
+pnpm cua discover \
+  --goal "Look up member {memberId} and read the current balance of their Savings account." \
+  --url http://localhost:4100/ --capability-id member-savings-balance --param memberId=10042 \
+  --evidence-name discovery-g1-savings-balance
+#    -> artifacts/member-savings-balance@1.json, evidence/discovery-g1-savings-balance/
+
+# 3. deterministic replay (slice 006)      pnpm cua replay artifacts/member-savings-balance@1.json --param memberId=10042
+# 4. business outcome (slice 006)          pnpm cua replay ... --param memberId=99999   -> MEMBER_NOT_FOUND
+# 5. escalation + human takeover (007/008) pnpm cua serve && pnpm dev:console
 ```
+
+Add `--headed` to watch the browser. Goals name parameters as `{memberId}`; the model types
+placeholders and the engine substitutes values, so parameter and secret values never reach the
+model transcript or the artifact.
+
+### Discovery output
+
+```
+discover member-savings-balance  provider=anthropic/claude-sonnet-5
+  1. type {TARGET_USER} into [1] textbox "User Name"
+  2. type {TARGET_PASSWORD} into [2] textbox "Password"
+  3. click [3] button "Sign In"
+  4. type {memberId} into [2] textbox "Member ID"
+  5. click [5] button "Search"
+  6. extract savingsBalance = "$1,234.56"
+  7. done: ...
+  artifact: artifacts/member-savings-balance@1.json (draft; 3 steps, 1 prelude(s), 0 pruned)
+  completed in 21s; 8 model calls, 30754 in / 1049 out tokens (~$0.072)
+```
+
+The recorder splits the sign-in into a `login` prelude with secret references, turns the typed
+member id into a `{param}` reference, infers per-step preconditions and expectations from what
+was on screen, verifies the extracted value can be re-read deterministically (table row + column
+first, regex fallback), prunes detours, and seeds the outcome catalog from
+`artifacts/defaults/<vendor>.outcomes.json`.
 
 ## Running without live services
 
 All tests run with no API key and no network using the fake LLM provider. The mock target app
-runs locally. Replay never needs a model.
+runs locally. Replay never needs a model. The whole discovery pipeline (surface, loop, recorder,
+evidence) can be exercised offline with a scripted "model":
+
+```bash
+pnpm cua discover --provider fake --fake-script examples/fake-scripts/g1-savings-balance.mjs \
+  --goal "Look up member {memberId} and read the current savings balance" \
+  --url http://localhost:4100/ --capability-id member-savings-balance --param memberId=10042
+```
 
 ## Architecture
 

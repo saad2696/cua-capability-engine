@@ -1,0 +1,905 @@
+{
+  "schemaVersion": "1.0",
+  "capability": {
+    "id": "member-savings-balance",
+    "version": 1,
+    "status": "draft",
+    "name": "Look up member {memberId} and read the current balance of their Savings account.",
+    "description": "Look up member {memberId} and read the current balance of their Savings account.",
+    "summary": [
+      "[login 1] Go to \"http://localhost:4100/\"",
+      "[login 2] Type <secret TARGET_USER> into textbox \"User Name\"",
+      "[login 3] Type <secret TARGET_PASSWORD> into textbox \"Password\"",
+      "[login 4] Click button \"Sign In\"",
+      "1. Type {memberId} into textbox \"Member ID\"",
+      "2. Click button \"Search\"",
+      "3. Read \"savingsBalance\" from table td"
+    ],
+    "app": {
+      "vendor": "legacy-cu-core",
+      "variant": "default",
+      "surface": "web"
+    },
+    "changelog": [
+      {
+        "version": 1,
+        "date": "2026-09-10T19:14:18.384Z",
+        "author": "recorder (anthropic/claude-sonnet-5)",
+        "note": "Recorded from run discover-2026-09-10191-b88ca3: Look up member {memberId} and read the current balance of their Savings account."
+      }
+    ]
+  },
+  "requires": {
+    "surface": "web",
+    "secrets": [
+      "TARGET_PASSWORD",
+      "TARGET_USER"
+    ]
+  },
+  "inputs": {
+    "memberId": {
+      "type": "string",
+      "description": "Parameter memberId",
+      "required": true,
+      "pattern": "^\\d{5}$",
+      "sensitivity": "pii"
+    }
+  },
+  "outputs": {
+    "savingsBalance": {
+      "type": "money",
+      "description": "Current balance of Savings account for member",
+      "from": "step:extract-savingsbalance",
+      "required": true,
+      "extract": {
+        "candidates": [
+          {
+            "strategy": "tableCell",
+            "rowMatch": "Savings",
+            "columnHeader": "Current Balance",
+            "frame": [
+              "main"
+            ]
+          },
+          {
+            "strategy": "regexInRegion",
+            "pattern": "Savings[\\s\\S]{0,160}?(\\$[\\d,]+\\.[\\d,]+)",
+            "group": 1,
+            "frame": [
+              "main"
+            ]
+          }
+        ],
+        "parse": {
+          "kind": "money",
+          "locale": "en-US",
+          "currency": "USD"
+        },
+        "validate": {
+          "min": 0
+        }
+      }
+    }
+  },
+  "preconditions": [
+    {
+      "kind": "authenticated",
+      "via": "prelude:login"
+    }
+  ],
+  "preludes": {
+    "login": [
+      {
+        "id": "step:open-app",
+        "intent": "Open the application",
+        "action": "navigate",
+        "value": {
+          "kind": "literal",
+          "value": "http://localhost:4100/"
+        },
+        "expect": [
+          {
+            "kind": "landmarkVisible",
+            "landmark": {
+              "role": "text",
+              "name": "Legacy CU Core — Sign In",
+              "exact": true
+            },
+            "frame": [
+              "main"
+            ]
+          }
+        ],
+        "wait": {
+          "for": "load",
+          "timeoutMs": 8000
+        },
+        "risk": "safe",
+        "pointOfNoReturn": false,
+        "optional": false,
+        "onFailure": "fail",
+        "timeoutMs": 10000
+      },
+      {
+        "id": "step:type-textbox-user-name",
+        "intent": "Enter username",
+        "action": "type",
+        "target": {
+          "frame": [
+            "main"
+          ],
+          "candidates": [
+            {
+              "strategy": "role",
+              "role": "textbox",
+              "name": "User Name",
+              "exact": true,
+              "confidence": 0.9
+            },
+            {
+              "strategy": "label",
+              "text": "User Name",
+              "exact": true,
+              "confidence": 0.8
+            },
+            {
+              "strategy": "css",
+              "selector": "input[name=\"u\"]",
+              "confidence": 0.5
+            },
+            {
+              "strategy": "visual",
+              "bbox": [
+                310,
+                67,
+                149,
+                14
+              ],
+              "viewport": [
+                1024,
+                768
+              ],
+              "anchorText": "User Name",
+              "confidence": 0.3
+            }
+          ],
+          "rationale": "role \"textbox\" + accessible name \"User Name\" comes from the accessibility tree and survives layout and branding changes; css by form field name is layout-independent; visual position is the universal fallback, trusted only if the anchor text is still within 150px.",
+          "recordedBBox": [
+            310,
+            67,
+            149,
+            14
+          ]
+        },
+        "value": {
+          "kind": "secret",
+          "name": "TARGET_USER"
+        },
+        "precondition": {
+          "urlPattern": "^/login(\\?.*)?$",
+          "frames": [
+            "main"
+          ],
+          "landmarks": [
+            {
+              "role": "text",
+              "name": "Legacy CU Core — Sign In",
+              "exact": true
+            },
+            {
+              "role": "cell",
+              "name": "Operator Sign In",
+              "exact": true
+            },
+            {
+              "role": "cell",
+              "name": "User Name",
+              "exact": true
+            },
+            {
+              "role": "textbox",
+              "name": "User Name",
+              "exact": true
+            },
+            {
+              "role": "textbox",
+              "name": "Password",
+              "exact": true
+            }
+          ],
+          "minLandmarks": 2,
+          "negative": []
+        },
+        "expect": [
+          {
+            "kind": "valueEquals",
+            "value": {
+              "kind": "secret",
+              "name": "TARGET_USER"
+            }
+          }
+        ],
+        "wait": {
+          "for": "none"
+        },
+        "risk": "safe",
+        "pointOfNoReturn": false,
+        "optional": false,
+        "onFailure": "fail",
+        "timeoutMs": 10000
+      },
+      {
+        "id": "step:type-textbox-password",
+        "intent": "Enter password to proceed with login",
+        "action": "type",
+        "target": {
+          "frame": [
+            "main"
+          ],
+          "candidates": [
+            {
+              "strategy": "role",
+              "role": "textbox",
+              "name": "Password",
+              "exact": true,
+              "confidence": 0.9
+            },
+            {
+              "strategy": "label",
+              "text": "Password",
+              "exact": true,
+              "confidence": 0.8
+            },
+            {
+              "strategy": "css",
+              "selector": "input[name=\"p\"]",
+              "confidence": 0.5
+            },
+            {
+              "strategy": "visual",
+              "bbox": [
+                310,
+                94,
+                149,
+                14
+              ],
+              "viewport": [
+                1024,
+                768
+              ],
+              "anchorText": "Password",
+              "confidence": 0.3
+            }
+          ],
+          "rationale": "role \"textbox\" + accessible name \"Password\" comes from the accessibility tree and survives layout and branding changes; css by form field name is layout-independent; visual position is the universal fallback, trusted only if the anchor text is still within 150px.",
+          "recordedBBox": [
+            310,
+            94,
+            149,
+            14
+          ]
+        },
+        "value": {
+          "kind": "secret",
+          "name": "TARGET_PASSWORD"
+        },
+        "precondition": {
+          "urlPattern": "^/login(\\?.*)?$",
+          "frames": [
+            "main"
+          ],
+          "landmarks": [
+            {
+              "role": "text",
+              "name": "Legacy CU Core — Sign In",
+              "exact": true
+            },
+            {
+              "role": "cell",
+              "name": "Operator Sign In",
+              "exact": true
+            },
+            {
+              "role": "cell",
+              "name": "User Name",
+              "exact": true
+            },
+            {
+              "role": "textbox",
+              "name": "User Name",
+              "exact": true
+            },
+            {
+              "role": "textbox",
+              "name": "Password",
+              "exact": true
+            }
+          ],
+          "minLandmarks": 2,
+          "negative": []
+        },
+        "expect": [
+          {
+            "kind": "valueEquals",
+            "value": {
+              "kind": "secret",
+              "name": "TARGET_PASSWORD"
+            }
+          }
+        ],
+        "wait": {
+          "for": "none"
+        },
+        "risk": "safe",
+        "pointOfNoReturn": false,
+        "optional": false,
+        "onFailure": "fail",
+        "timeoutMs": 10000
+      },
+      {
+        "id": "step:click-button-sign-in",
+        "intent": "Submit login form",
+        "action": "click",
+        "target": {
+          "frame": [
+            "main"
+          ],
+          "candidates": [
+            {
+              "strategy": "role",
+              "role": "button",
+              "name": "Sign In",
+              "exact": true,
+              "confidence": 0.9
+            },
+            {
+              "strategy": "text",
+              "text": "Sign In",
+              "exact": true,
+              "confidence": 0.7
+            },
+            {
+              "strategy": "css",
+              "selector": "form > table > tbody > tr:nth-of-type(4) > td > input",
+              "confidence": 0.35
+            },
+            {
+              "strategy": "visual",
+              "bbox": [
+                486,
+                121,
+                37,
+                14
+              ],
+              "viewport": [
+                1024,
+                768
+              ],
+              "anchorText": "Sign In",
+              "confidence": 0.3
+            }
+          ],
+          "rationale": "role \"button\" + accessible name \"Sign In\" comes from the accessibility tree and survives layout and branding changes; visible text \"Sign In\" is what an operator reads; css nth-of-type path is layout-bound; last structural resort; visual position is the universal fallback, trusted only if the anchor text is still within 150px.",
+          "recordedBBox": [
+            486,
+            121,
+            37,
+            14
+          ]
+        },
+        "precondition": {
+          "urlPattern": "^/login(\\?.*)?$",
+          "frames": [
+            "main"
+          ],
+          "landmarks": [
+            {
+              "role": "text",
+              "name": "Legacy CU Core — Sign In",
+              "exact": true
+            },
+            {
+              "role": "cell",
+              "name": "Operator Sign In",
+              "exact": true
+            },
+            {
+              "role": "cell",
+              "name": "User Name",
+              "exact": true
+            },
+            {
+              "role": "textbox",
+              "name": "User Name",
+              "exact": true
+            },
+            {
+              "role": "textbox",
+              "name": "Password",
+              "exact": true
+            }
+          ],
+          "minLandmarks": 2,
+          "negative": []
+        },
+        "expect": [
+          {
+            "kind": "urlMatches",
+            "pattern": "^/search(\\?.*)?$",
+            "scope": "frame"
+          },
+          {
+            "kind": "landmarkVisible",
+            "landmark": {
+              "role": "text",
+              "name": "Member Search",
+              "exact": true
+            },
+            "frame": [
+              "main"
+            ]
+          }
+        ],
+        "wait": {
+          "for": "landmark",
+          "landmark": {
+            "role": "text",
+            "name": "Member Search",
+            "exact": true
+          },
+          "frame": [
+            "main"
+          ],
+          "timeoutMs": 8000
+        },
+        "risk": "safe",
+        "pointOfNoReturn": false,
+        "optional": false,
+        "onFailure": "fail",
+        "timeoutMs": 10000
+      }
+    ]
+  },
+  "steps": [
+    {
+      "id": "step:type-textbox-member-id",
+      "intent": "Enter the member ID to search",
+      "action": "type",
+      "target": {
+        "frame": [
+          "main"
+        ],
+        "candidates": [
+          {
+            "strategy": "role",
+            "role": "textbox",
+            "name": "Member ID",
+            "exact": true,
+            "confidence": 0.9
+          },
+          {
+            "strategy": "label",
+            "text": "Member ID",
+            "exact": true,
+            "confidence": 0.8
+          },
+          {
+            "strategy": "css",
+            "selector": "input[name=\"q\"]",
+            "confidence": 0.5
+          },
+          {
+            "strategy": "visual",
+            "bbox": [
+              351,
+              67,
+              149,
+              14
+            ],
+            "viewport": [
+              1024,
+              768
+            ],
+            "anchorText": "Member ID",
+            "confidence": 0.3
+          }
+        ],
+        "rationale": "role \"textbox\" + accessible name \"Member ID\" comes from the accessibility tree and survives layout and branding changes; css by form field name is layout-independent; visual position is the universal fallback, trusted only if the anchor text is still within 150px.",
+        "recordedBBox": [
+          351,
+          67,
+          149,
+          14
+        ]
+      },
+      "value": {
+        "kind": "param",
+        "name": "memberId"
+      },
+      "precondition": {
+        "urlPattern": "^/search(\\?.*)?$",
+        "frames": [
+          "main"
+        ],
+        "landmarks": [
+          {
+            "role": "text",
+            "name": "Legacy CU Core — Member Search",
+            "exact": true
+          },
+          {
+            "role": "cell",
+            "name": "Member Search",
+            "exact": true
+          },
+          {
+            "role": "textbox",
+            "name": "Member ID",
+            "exact": true
+          },
+          {
+            "role": "link",
+            "name": "Clear",
+            "exact": true
+          }
+        ],
+        "minLandmarks": 2,
+        "negative": []
+      },
+      "expect": [
+        {
+          "kind": "valueEquals",
+          "value": {
+            "kind": "param",
+            "name": "memberId"
+          }
+        }
+      ],
+      "wait": {
+        "for": "none"
+      },
+      "risk": "safe",
+      "pointOfNoReturn": false,
+      "optional": false,
+      "onFailure": "fail",
+      "timeoutMs": 10000
+    },
+    {
+      "id": "step:click-button-search",
+      "intent": "Search for member {memberId}",
+      "action": "click",
+      "target": {
+        "frame": [
+          "main"
+        ],
+        "candidates": [
+          {
+            "strategy": "role",
+            "role": "button",
+            "name": "Search",
+            "exact": true,
+            "confidence": 0.9
+          },
+          {
+            "strategy": "text",
+            "text": "Search",
+            "exact": true,
+            "confidence": 0.7
+          },
+          {
+            "strategy": "css",
+            "selector": "form > table > tbody > tr:nth-of-type(3) > td > input",
+            "confidence": 0.35
+          },
+          {
+            "strategy": "visual",
+            "bbox": [
+              561,
+              94,
+              38,
+              14
+            ],
+            "viewport": [
+              1024,
+              768
+            ],
+            "anchorText": "Search",
+            "confidence": 0.3
+          }
+        ],
+        "rationale": "role \"button\" + accessible name \"Search\" comes from the accessibility tree and survives layout and branding changes; visible text \"Search\" is what an operator reads; css nth-of-type path is layout-bound; last structural resort; visual position is the universal fallback, trusted only if the anchor text is still within 150px.",
+        "recordedBBox": [
+          561,
+          94,
+          38,
+          14
+        ]
+      },
+      "precondition": {
+        "urlPattern": "^/search(\\?.*)?$",
+        "frames": [
+          "main"
+        ],
+        "landmarks": [
+          {
+            "role": "text",
+            "name": "Legacy CU Core — Member Search",
+            "exact": true
+          },
+          {
+            "role": "cell",
+            "name": "Member Search",
+            "exact": true
+          },
+          {
+            "role": "textbox",
+            "name": "Member ID",
+            "exact": true
+          },
+          {
+            "role": "link",
+            "name": "Clear",
+            "exact": true
+          }
+        ],
+        "minLandmarks": 2,
+        "negative": []
+      },
+      "expect": [
+        {
+          "kind": "urlMatches",
+          "pattern": "^/member/[^/?&]+(\\?.*)?$",
+          "scope": "frame"
+        },
+        {
+          "kind": "landmarkVisible",
+          "landmark": {
+            "role": "text",
+            "name": "Legacy CU Core — Member Detail",
+            "exact": true
+          },
+          "frame": [
+            "main"
+          ]
+        }
+      ],
+      "wait": {
+        "for": "landmark",
+        "landmark": {
+          "role": "text",
+          "name": "Legacy CU Core — Member Detail",
+          "exact": true
+        },
+        "frame": [
+          "main"
+        ],
+        "timeoutMs": 8000
+      },
+      "risk": "safe",
+      "pointOfNoReturn": false,
+      "optional": false,
+      "onFailure": "fail",
+      "timeoutMs": 10000
+    },
+    {
+      "id": "step:extract-savingsbalance",
+      "intent": "Using row label \"Savings\" (type) and column header \"Current Balance\" to deterministically re-read this value across members.",
+      "action": "extract",
+      "target": {
+        "frame": [
+          "main"
+        ],
+        "candidates": [
+          {
+            "strategy": "css",
+            "selector": "table td",
+            "confidence": 0.2
+          }
+        ],
+        "rationale": "Informational only: extraction uses the output's own candidates, most semantic first."
+      },
+      "output": "savingsBalance",
+      "precondition": {
+        "urlPattern": "^/member/[^/?&]+(\\?.*)?$",
+        "frames": [
+          "main"
+        ],
+        "landmarks": [
+          {
+            "role": "text",
+            "name": "Legacy CU Core — Member Detail",
+            "exact": true
+          },
+          {
+            "role": "cell",
+            "name": "Member Detail",
+            "exact": true
+          },
+          {
+            "role": "link",
+            "name": "Open New Sub-Account",
+            "exact": true
+          },
+          {
+            "role": "link",
+            "name": "Back to Search",
+            "exact": true
+          }
+        ],
+        "minLandmarks": 2,
+        "negative": []
+      },
+      "expect": [],
+      "wait": {
+        "for": "none"
+      },
+      "risk": "safe",
+      "pointOfNoReturn": false,
+      "optional": false,
+      "onFailure": "fail",
+      "timeoutMs": 10000
+    }
+  ],
+  "checkpoint": [
+    {
+      "kind": "landmarkVisible",
+      "landmark": {
+        "role": "text",
+        "name": "Legacy CU Core — Member Detail",
+        "exact": true
+      },
+      "frame": [
+        "main"
+      ]
+    },
+    {
+      "kind": "textVisible",
+      "value": {
+        "kind": "param",
+        "name": "memberId"
+      },
+      "frame": [
+        "main"
+      ]
+    }
+  ],
+  "outcomes": [
+    {
+      "code": "MEMBER_NOT_FOUND",
+      "kind": "business",
+      "message": "No member exists with this member ID.",
+      "detect": [
+        {
+          "kind": "textMatches",
+          "pattern": "No member found"
+        }
+      ],
+      "appliesTo": "any",
+      "maxRecoveries": 1,
+      "escalate": false
+    },
+    {
+      "code": "INVALID_MEMBER_ID",
+      "kind": "business",
+      "message": "The member ID was rejected by the application.",
+      "detect": [
+        {
+          "kind": "textMatches",
+          "pattern": "must be exactly five digits"
+        }
+      ],
+      "appliesTo": "any",
+      "maxRecoveries": 1,
+      "escalate": false
+    },
+    {
+      "code": "VALIDATION_ERROR",
+      "kind": "business",
+      "message": "The application rejected the submitted form.",
+      "detect": [
+        {
+          "kind": "textMatches",
+          "pattern": "is required|must be|Select a valid|VAL-\\d+",
+          "flags": "i"
+        }
+      ],
+      "appliesTo": "any",
+      "maxRecoveries": 1,
+      "escalate": false
+    },
+    {
+      "code": "PERMISSION_DENIED",
+      "kind": "business",
+      "message": "The operator account is not authorized for this function.",
+      "detect": [
+        {
+          "kind": "textMatches",
+          "pattern": "not authorized",
+          "flags": "i"
+        }
+      ],
+      "appliesTo": "any",
+      "maxRecoveries": 1,
+      "escalate": false
+    },
+    {
+      "code": "SESSION_EXPIRED",
+      "kind": "recoverable",
+      "message": "The operator session expired; signing in again.",
+      "detect": [
+        {
+          "kind": "urlMatches",
+          "pattern": "/login",
+          "scope": "frame"
+        }
+      ],
+      "appliesTo": "any",
+      "recover": "prelude:login",
+      "maxRecoveries": 1,
+      "escalate": false
+    },
+    {
+      "code": "MAINTENANCE_NOTICE",
+      "kind": "recoverable",
+      "message": "Known maintenance banner dialog; dismissed.",
+      "detect": [
+        {
+          "kind": "dialogOpen",
+          "messageMatches": "System maintenance",
+          "dialogType": "alert"
+        }
+      ],
+      "appliesTo": "any",
+      "recover": "dismissDialog",
+      "maxRecoveries": 2,
+      "escalate": false
+    },
+    {
+      "code": "SERVER_ERROR",
+      "kind": "recoverable",
+      "message": "The application returned a server error; retrying.",
+      "detect": [
+        {
+          "kind": "textMatches",
+          "pattern": "System Error"
+        }
+      ],
+      "appliesTo": "any",
+      "recover": "retry",
+      "maxRecoveries": 2,
+      "escalate": false
+    },
+    {
+      "code": "UNKNOWN_DIALOG",
+      "kind": "failure",
+      "message": "An undeclared dialog appeared.",
+      "detect": [
+        {
+          "kind": "dialogOpen"
+        }
+      ],
+      "appliesTo": "any",
+      "maxRecoveries": 1,
+      "escalate": true
+    }
+  ],
+  "policy": {
+    "allowedOrigins": [
+      "http://localhost:4100"
+    ],
+    "allowedActions": [
+      "navigate",
+      "click",
+      "type",
+      "extract"
+    ],
+    "blockedUrlPatterns": []
+  },
+  "provenance": {
+    "discoveredAt": "2026-09-10T19:13:57.528Z",
+    "provider": "anthropic",
+    "model": "claude-sonnet-5",
+    "runId": "discover-2026-09-10191-b88ca3",
+    "redacted": true
+  }
+}
