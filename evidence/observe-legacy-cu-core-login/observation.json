@@ -1,0 +1,106 @@
+{
+  "at": "2026-09-10T18:49:58.767Z",
+  "url": "http://localhost:4100/",
+  "title": "Legacy CU Core",
+  "frames": [
+    {
+      "path": [],
+      "url": "http://localhost:4100/",
+      "offset": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "path": [
+        "nav"
+      ],
+      "url": "http://localhost:4100/nav",
+      "offset": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "path": [
+        "main"
+      ],
+      "url": "http://localhost:4100/login",
+      "offset": {
+        "x": 172,
+        "y": 0
+      }
+    }
+  ],
+  "elements": [
+    {
+      "index": 0,
+      "role": "link",
+      "name": "Sign In",
+      "bbox": [
+        13,
+        37,
+        43,
+        15
+      ],
+      "frame": [
+        "nav"
+      ],
+      "enabled": true,
+      "focused": false
+    },
+    {
+      "index": 1,
+      "role": "textbox",
+      "name": "User Name",
+      "bbox": [
+        310,
+        67,
+        149,
+        14
+      ],
+      "frame": [
+        "main"
+      ],
+      "enabled": true,
+      "focused": false
+    },
+    {
+      "index": 2,
+      "role": "textbox",
+      "name": "Password",
+      "bbox": [
+        310,
+        94,
+        149,
+        14
+      ],
+      "frame": [
+        "main"
+      ],
+      "enabled": true,
+      "focused": false
+    },
+    {
+      "index": 3,
+      "role": "button",
+      "name": "Sign In",
+      "bbox": [
+        486,
+        121,
+        37,
+        14
+      ],
+      "frame": [
+        "main"
+      ],
+      "enabled": true,
+      "focused": false
+    }
+  ],
+  "viewport": {
+    "width": 1024,
+    "height": 768
+  },
+  "lastHttpStatus": 200
+}

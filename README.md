@@ -21,7 +21,7 @@ Slice-by-slice build. See [openspec/ROADMAP.md](./openspec/ROADMAP.md) for what 
 | 001 | Scaffold monorepo | done |
 | 002 | Mock target app "Legacy CU Core" | done |
 | 003 | Capability artifact schema | done |
-| 004 | Surface abstraction and perception | planned |
+| 004 | Surface abstraction and perception | done |
 | 005 | LLM discovery loop and recorder | planned |
 | 006 | Deterministic replay | planned |
 | 007 | Session control and escalation | planned |
@@ -91,6 +91,22 @@ reference example is at `artifacts/examples/member-savings-balance@1.json`.
 pnpm cua artifact validate artifacts/examples/member-savings-balance@1.json   # migrate + validate, JSON-path issues
 pnpm cua artifact summary  artifacts/examples/member-savings-balance@1.json   # contract + plain-English steps for review
 ```
+
+## How the agent sees a page
+
+The engine never hands the DOM to the model. It reads the browser's **accessibility tree**
+(over the Chrome DevTools Protocol, frame by frame, because framesets hide their children from
+the root tree), takes bounding boxes from the layout engine, and draws numbered marks on a
+screenshot. The model gets the marked image plus a list like `[3] button "Sign In"` and acts by
+number. Try it on any URL:
+
+```bash
+pnpm cua observe http://localhost:4100/                 # writes evidence/observe-<timestamp>/
+pnpm cua observe http://localhost:4100/ --headed        # watch the browser
+```
+
+Output: `screenshot-marked.png`, `screenshot.png`, `observation.json` (elements, frames,
+dialog state). A sample is committed at `evidence/observe-legacy-cu-core-login/`.
 
 ## Demo path
 
