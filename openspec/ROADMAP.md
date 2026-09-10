@@ -8,7 +8,7 @@ after any of them and document the rest as next steps in REPORT.md § Cuts.
 |---|---|---|---|---|
 | 001 | scaffold-monorepo | — | 6 | done |
 | 002 | target-app-legacy-cu-core | 001 | 4 | done |
-| 003 | capability-schema | 001 | 3.2, 3.3 | planned |
+| 003 | capability-schema | 001 | 3.2, 3.3 | done |
 | 004 | surface-and-perception | 001, 002 | 3.1, 3.7 | planned |
 | 005 | discovery-agent-loop | 003, 004 | 3.1, 3.2, 3.5 | planned |
 | 006 | deterministic-replay | 003, 004 | 3.3, 3.5 | planned |

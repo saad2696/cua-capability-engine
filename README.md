@@ -20,7 +20,7 @@ Slice-by-slice build. See [openspec/ROADMAP.md](./openspec/ROADMAP.md) for what 
 |---|---|---|
 | 001 | Scaffold monorepo | done |
 | 002 | Mock target app "Legacy CU Core" | done |
-| 003 | Capability artifact schema | planned |
+| 003 | Capability artifact schema | done |
 | 004 | Surface abstraction and perception | planned |
 | 005 | LLM discovery loop and recorder | planned |
 | 006 | Deterministic replay | planned |
@@ -81,6 +81,17 @@ a request (that request only) or arm a one-shot fault for a later request at
 
 `POST /__reset` restores the seed data.
 
+## Capability artifacts
+
+Saved capabilities live in `artifacts/` as `<id>@<version>.json`. The schema is the focal
+point of the design; read [docs/artifact-schema.md](./docs/artifact-schema.md). A hand-authored
+reference example is at `artifacts/examples/member-savings-balance@1.json`.
+
+```bash
+pnpm cua artifact validate artifacts/examples/member-savings-balance@1.json   # migrate + validate, JSON-path issues
+pnpm cua artifact summary  artifacts/examples/member-savings-balance@1.json   # contract + plain-English steps for review
+```
+
 ## Demo path
 
 _Filled in as the slices land. Final form will be:_
@@ -137,4 +148,5 @@ redacted; see slice 009 and REPORT.md § Safety.
 
 - [openspec/project.md](./openspec/project.md) — decisions and conventions
 - [openspec/ROADMAP.md](./openspec/ROADMAP.md) — build order
-- `docs/artifact-schema.md`, `docs/error-taxonomy.md` — arrive with slices 003 and 006
+- [docs/artifact-schema.md](./docs/artifact-schema.md) — the capability artifact, field by field, with rationale
+- `docs/error-taxonomy.md` — arrives with slice 006

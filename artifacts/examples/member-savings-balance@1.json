@@ -1,0 +1,131 @@
+{
+  "schemaVersion": "1.0",
+  "capability": {
+    "id": "member-savings-balance",
+    "version": 1,
+    "status": "draft",
+    "name": "Look up member savings balance",
+    "description": "Search Legacy CU Core for a member by five-digit member ID and return the current balance of their Savings account. Read-only: performs no transactions.",
+    "summary": [],
+    "app": { "vendor": "legacy-cu-core", "variant": "default", "surface": "web", "observedAppVersion": "4.2.1" },
+    "changelog": [{ "version": 1, "date": "2026-09-10T00:00:00Z", "author": "recorder", "note": "Hand-authored reference example; the recorder in slice 005 produces this shape." }]
+  },
+  "requires": { "surface": "web", "secrets": ["TARGET_USER", "TARGET_PASSWORD"] },
+  "inputs": {
+    "memberId": { "type": "string", "description": "Five-digit member number.", "required": true, "pattern": "^[0-9]{5}$", "sensitivity": "pii", "example": "10042" }
+  },
+  "outputs": {
+    "savingsBalance": {
+      "type": "money",
+      "description": "Current balance of the member's Savings account.",
+      "from": "step:read-savings-balance",
+      "required": true,
+      "extract": {
+        "candidates": [
+          { "strategy": "tableCell", "rowMatch": "Savings", "columnHeader": "Current Balance", "frame": ["main"] },
+          { "strategy": "regexInRegion", "pattern": "Savings[\\s\\S]{0,120}?\\$([0-9,]+\\.[0-9]{2})", "group": 1, "frame": ["main"] }
+        ],
+        "parse": { "kind": "money", "locale": "en-US", "currency": "USD" },
+        "validate": { "min": 0 }
+      }
+    }
+  },
+  "preconditions": [{ "kind": "authenticated", "via": "prelude:login" }],
+  "preludes": {
+    "login": [
+      {
+        "id": "step:login-open", "intent": "Open the application shell", "action": "navigate",
+        "value": { "kind": "literal", "value": "http://localhost:4100/" },
+        "expect": [{ "kind": "landmarkVisible", "landmark": { "role": "textbox", "name": "User Name" }, "frame": ["main"] }],
+        "wait": { "for": "load", "timeoutMs": 8000 }
+      },
+      {
+        "id": "step:login-user", "intent": "Enter the operator user name", "action": "type",
+        "target": { "frame": ["main"], "candidates": [
+          { "strategy": "role", "role": "textbox", "name": "User Name", "confidence": 0.9 },
+          { "strategy": "label", "text": "User Name", "confidence": 0.8 },
+          { "strategy": "css", "selector": "input[name='u']", "confidence": 0.4 }
+        ], "rationale": "Accessible name from title attribute is stable across branding; css fallback uses the field name, not layout." },
+        "value": { "kind": "secret", "name": "TARGET_USER" },
+        "expect": [{ "kind": "valueEquals", "value": { "kind": "secret", "name": "TARGET_USER" } }]
+      },
+      {
+        "id": "step:login-password", "intent": "Enter the operator password", "action": "type",
+        "target": { "frame": ["main"], "candidates": [
+          { "strategy": "role", "role": "textbox", "name": "Password", "confidence": 0.9 },
+          { "strategy": "label", "text": "Password", "confidence": 0.8 },
+          { "strategy": "css", "selector": "input[name='p']", "confidence": 0.4 }
+        ], "rationale": "Password fields expose role textbox with their title as name." },
+        "value": { "kind": "secret", "name": "TARGET_PASSWORD" }
+      },
+      {
+        "id": "step:login-submit", "intent": "Submit the sign-in form", "action": "click",
+        "target": { "frame": ["main"], "candidates": [
+          { "strategy": "role", "role": "button", "name": "Sign In", "confidence": 0.9 },
+          { "strategy": "text", "text": "Sign In", "confidence": 0.7 },
+          { "strategy": "css", "selector": "form input[type='submit']", "confidence": 0.4 }
+        ], "rationale": "Submit buttons are exposed as role button named by their value." },
+        "expect": [{ "kind": "landmarkVisible", "landmark": { "role": "textbox", "name": "Member ID" }, "frame": ["main"] }],
+        "wait": { "for": "landmark", "landmark": { "role": "textbox", "name": "Member ID" }, "frame": ["main"], "timeoutMs": 8000 },
+        "retryable": false
+      }
+    ]
+  },
+  "steps": [
+    {
+      "id": "step:enter-member-id", "intent": "Enter the member ID into the search box", "action": "type",
+      "precondition": { "urlPattern": "/search", "frames": ["main"], "landmarks": [
+        { "role": "cell", "name": "Member Search" }, { "role": "textbox", "name": "Member ID" }, { "role": "button", "name": "Search" }
+      ], "minLandmarks": 2, "negative": [{ "kind": "textNotVisible", "pattern": "not authorized|System Error", "flags": "i" }] },
+      "target": { "frame": ["main"], "candidates": [
+        { "strategy": "role", "role": "textbox", "name": "Member ID", "confidence": 0.9 },
+        { "strategy": "label", "text": "Member ID", "confidence": 0.8 },
+        { "strategy": "css", "selector": "input[name='q']", "confidence": 0.4 },
+        { "strategy": "visual", "bbox": [160, 28, 72, 12], "viewport": [1280, 800], "anchorText": "Member ID", "confidence": 0.3 }
+      ], "rationale": "Role+name survives re-labelling of surrounding layout; label handles apps that drop title attributes; css by field name is layout-independent; visual is last resort with an anchor check.",
+        "recordedBBox": [160, 28, 72, 12] },
+      "value": { "kind": "param", "name": "memberId" },
+      "expect": [{ "kind": "valueEquals", "value": { "kind": "param", "name": "memberId" } }],
+      "wait": { "for": "none" }
+    },
+    {
+      "id": "step:search", "intent": "Run the member search", "action": "click",
+      "target": { "frame": ["main"], "candidates": [
+        { "strategy": "role", "role": "button", "name": "Search", "confidence": 0.9 },
+        { "strategy": "text", "text": "Search", "exact": true, "confidence": 0.7 },
+        { "strategy": "css", "selector": "form input[type='submit']", "confidence": 0.4 }
+      ], "rationale": "Single submit button on the form." },
+      "expect": [
+        { "kind": "urlMatches", "pattern": "/member/[0-9]{5}$", "scope": "frame" },
+        { "kind": "landmarkVisible", "landmark": { "role": "cell", "name": "Member Detail" }, "frame": ["main"] }
+      ],
+      "wait": { "for": "landmark", "landmark": { "role": "cell", "name": "Member Detail" }, "frame": ["main"], "timeoutMs": 8000 },
+      "retryable": false
+    },
+    {
+      "id": "step:read-savings-balance", "intent": "Read the Savings account's current balance", "action": "extract", "output": "savingsBalance",
+      "precondition": { "urlPattern": "/member/[0-9]{5}$", "frames": ["main"], "landmarks": [
+        { "role": "cell", "name": "Member Detail" }, { "role": "cell", "name": "Accounts" }, { "role": "cell", "name": "Current Balance" }
+      ] },
+      "target": { "frame": ["main"], "candidates": [
+        { "strategy": "css", "selector": "table:nth-of-type(2) tr.row:has(td:nth-child(2):text-is('Savings')) td:nth-child(4)", "confidence": 0.4 }
+      ], "rationale": "Target is informational only: extraction uses the tableCell strategy first; this css path is a documented fallback." },
+      "wait": { "for": "none" }
+    }
+  ],
+  "checkpoint": [
+    { "kind": "landmarkVisible", "landmark": { "role": "cell", "name": "Member Detail" }, "frame": ["main"] },
+    { "kind": "textVisible", "value": { "kind": "param", "name": "memberId" }, "frame": ["main"] }
+  ],
+  "outcomes": [
+    { "code": "MEMBER_NOT_FOUND", "kind": "business", "message": "No member exists with this member ID.", "detect": [{ "kind": "textMatches", "pattern": "No member found", "frame": ["main"] }], "appliesTo": ["step:search"] },
+    { "code": "INVALID_MEMBER_ID", "kind": "business", "message": "The member ID was rejected by the application.", "detect": [{ "kind": "textMatches", "pattern": "must be exactly five digits", "frame": ["main"] }], "appliesTo": ["step:search"] },
+    { "code": "PERMISSION_DENIED", "kind": "business", "message": "The operator account is not authorized for this function.", "detect": [{ "kind": "textMatches", "pattern": "not authorized", "flags": "i", "frame": ["main"] }] },
+    { "code": "SESSION_EXPIRED", "kind": "recoverable", "message": "The operator session expired; signing in again.", "detect": [{ "kind": "urlMatches", "pattern": "/login", "scope": "frame" }], "recover": "prelude:login", "maxRecoveries": 1 },
+    { "code": "MAINTENANCE_NOTICE", "kind": "recoverable", "message": "Known maintenance banner dialog; dismissed.", "detect": [{ "kind": "dialogOpen", "dialogType": "alert", "messageMatches": "System maintenance" }], "recover": "dismissDialog", "maxRecoveries": 2 },
+    { "code": "SERVER_ERROR", "kind": "recoverable", "message": "The application returned a server error; retrying.", "detect": [{ "kind": "textMatches", "pattern": "System Error", "frame": ["main"] }], "recover": "retry", "maxRecoveries": 2 },
+    { "code": "UNKNOWN_DIALOG", "kind": "failure", "message": "An undeclared dialog appeared.", "detect": [{ "kind": "dialogOpen" }], "escalate": true }
+  ],
+  "policy": { "allowedOrigins": ["http://localhost:4100"], "allowedActions": ["navigate", "click", "type", "extract"], "blockedUrlPatterns": ["/__faults", "/__reset"] },
+  "provenance": { "discoveredAt": "2026-09-10T00:00:00Z", "provider": "hand-authored", "model": "none", "runId": "example", "redacted": true }
+}
