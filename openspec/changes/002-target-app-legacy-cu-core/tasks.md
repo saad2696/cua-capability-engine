@@ -1,0 +1,7 @@
+# Tasks
+- [ ] 2.1 Express server, cookie session, `dotenv`, port 4100
+- [ ] 2.2 Views: frameset shell, login, search, member detail, sub-account form, confirm, done, not-found, error
+- [ ] 2.3 Members data module with five synthetic records
+- [ ] 2.4 Fault middleware + `/__faults` page
+- [ ] 2.5 `pnpm dev:target` script; README "Run the target app" section
+- [ ] 2.6 Smoke test: supertest walk through the happy path and one fault

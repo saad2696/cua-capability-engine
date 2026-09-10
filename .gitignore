@@ -1,0 +1,21 @@
+# secrets
+.env
+.env.*
+!.env.example
+
+# dependencies / build
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+
+# tooling
+.turbo/
+coverage/
+playwright-report/
+test-results/
+.DS_Store
+
+# runtime scratch (evidence that IS meant to ship lives in evidence/ and is committed)
+tmp/
+evidence/**/tmp/

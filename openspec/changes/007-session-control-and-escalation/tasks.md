@@ -1,0 +1,11 @@
+# Tasks
+- [ ] 7.1 `Session` class: state machine, controller, lease tokens, `shouldPause()`, timeouts
+- [ ] 7.2 Surface `act` enforces lease; `CONTROL_VIOLATION` event
+- [ ] 7.3 `InterventionRequest` store (in-memory + `evidence/<run>/interventions.json`)
+- [ ] 7.4 Escalation triggers wired into discovery loop and replay executor
+- [ ] 7.5 Frame streamer (fps by state) and input forwarder with coordinate mapping
+- [ ] 7.6 Human action capture with locator hit-test and redaction
+- [ ] 7.7 Hand back: resumeAt semantics for discovery and replay; recorder boundary marker
+- [ ] 7.8 HTTP + WS server (Fastify or Express + ws), localhost only, SSE for events
+- [ ] 7.9 `cua serve` and headless curl demo: pause a replay, take control via WS client script, hand back
+- [ ] 7.10 Tests: state machine transitions; lease rejection; intervention timeout; disconnect grace; resume same/next/abort

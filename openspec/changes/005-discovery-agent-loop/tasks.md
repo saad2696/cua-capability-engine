@@ -1,0 +1,16 @@
+# Tasks
+- [ ] 5.1 `LlmProvider`, `DecisionContext`, `Decision` types; tool definitions (JSON schema)
+- [ ] 5.2 `FakeProvider` with scripted decisions
+- [ ] 5.3 `AnthropicProvider` with image + tools; model from config; usage logged
+- [ ] 5.4 Prompt builder with history compaction and screenshot downscale
+- [ ] 5.5 Agent loop with stop conditions and policy hook
+- [ ] 5.6 Recorder: steps, locator, expect inference, param/secret substitution, prelude split, outcomes, checkpoint
+- [ ] 5.7 `cua discover --goal "..." --url ... --param memberId=10042 --capability-id ...`
+- [ ] 5.8 Test: FakeProvider scripted G1 run against target app produces a valid artifact with `{param}` substitution
+- [ ] 5.9 Test: loop detection escalates after 3 identical decisions
+- [ ] 5.10 State graph + shortest-path pruning + pruned-steps audit file
+- [ ] 5.11 Intent capture and summary generation
+- [ ] 5.12 Value classification incl. PII heuristics and refusal of sensitive literals
+- [ ] 5.13 Outcome seeding from encountered error states
+- [ ] 5.14 Post-discovery verification replay and status gating
+- [ ] 5.15 Tests: scripted detour run yields pruned artifact that verifies; sensitive literal refused

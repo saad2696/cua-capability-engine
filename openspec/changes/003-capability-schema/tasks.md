@@ -1,0 +1,13 @@
+# Tasks
+- [ ] 3.1 Zod schemas: Locator, Value, Assertion, Wait, Step, Outcome, Policy, Capability
+- [ ] 3.2 Zod schemas: ReplayResult, DiscoveryResult, Event
+- [ ] 3.3 Cross-field validation: outputs.from references an existing extract step; param refs exist in inputs
+- [ ] 3.4 Example artifact `artifacts/examples/member-savings-balance@1.json` that validates
+- [ ] 3.5 `docs/artifact-schema.md` with the annotated example and rationale per field
+- [ ] 3.6 Unit tests: valid example passes; missing checkpoint fails; literal secret fails
+- [ ] 3.7 `cua artifact validate <file>` command
+- [ ] 3.8 ScreenSignature type + landmark matching rule
+- [ ] 3.9 Step flags: retryable, pointOfNoReturn, optional, onFailure, timeoutMs
+- [ ] 3.10 Candidate confidence/stats; extraction contract with candidates/parse/validate
+- [ ] 3.11 `requires`, `summary`, `changelog`; migration scaffold with test
+- [ ] 3.12 Schema docs updated with every new field and its rationale
