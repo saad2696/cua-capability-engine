@@ -13,6 +13,8 @@ import { join } from "node:path";
 import express, { type Express, type Request, type Response } from "express";
 import { WebSocketServer, type WebSocket } from "ws";
 import { validateCapability } from "@cua/schema";
+import { AnthropicProvider } from "../llm/AnthropicProvider.js";
+import type { LlmProvider } from "../llm/types.js";
 import { FrameStreamer, applyInput, type InputMessage } from "./live.js";
 import { RunRegistry, type RunRecord } from "./RunRegistry.js";
 
@@ -23,12 +25,18 @@ export interface ServerOptions {
   secrets?: Record<string, string>;
   headless?: boolean;
   interventionTimeoutMs?: number;
+  /**
+   * Provider factory for discovery runs. Injected so the console can be demonstrated with the
+   * scripted fake provider — no API key, no cost, same pipeline — and switched to a real model
+   * without changing the server.
+   */
+  provider?: (name?: string) => LlmProvider;
 }
 
 const publicRun = (r: RunRecord) => ({
   id: r.id, kind: r.kind, capabilityId: r.capabilityId, capabilityVersion: r.capabilityVersion,
   params: r.params, status: r.status, startedAt: r.startedAt, finishedAt: r.finishedAt,
-  evidenceDir: r.evidenceDir, session: r.session.toJSON(), result: r.result,
+  evidenceDir: r.evidenceDir, session: r.session.toJSON(), result: r.result, discovery: r.discovery,
 });
 
 export function createServerApp(opts: ServerOptions = {}): { app: Express; registry: RunRegistry } {
@@ -159,6 +167,29 @@ export function createServerApp(opts: ServerOptions = {}): { app: Express; regis
     res.json(raw);
   });
 
+  app.post("/api/discover", (req, res) => {
+    void (async () => {
+      const body = req.body as { goal?: string; url?: string; capabilityId?: string; params?: Record<string, string>; maxSteps?: number; provider?: string; headless?: boolean };
+      if (!body.goal || !body.url) return void res.status(400).json({ error: "goal and url are required" });
+      const make = opts.provider ?? ((name?: string) => new AnthropicProvider(name ? { model: name } : {}));
+      let provider: LlmProvider;
+      try {
+        provider = make(body.provider);
+      } catch (e) {
+        // Missing key is the common case, and it deserves a clear answer rather than a 500.
+        return void res.status(400).json({ error: `no model provider available: ${(e as Error).message}` });
+      }
+      const run = await registry.startDiscovery({
+        goal: body.goal, url: body.url, capabilityId: body.capabilityId ?? "discovered-capability",
+        provider, params: body.params ?? {}, secrets: opts.secrets ?? {},
+        ...(body.maxSteps ? { maxSteps: body.maxSteps } : {}),
+        headless: body.headless ?? opts.headless ?? true,
+        ...(opts.interventionTimeoutMs ? { interventionTimeoutMs: opts.interventionTimeoutMs } : {}),
+      });
+      res.status(201).json(publicRun(run));
+    })().catch((e: Error) => res.status(500).json({ error: e.message }));
+  });
+
   app.get("/api/health", (_req, res) => void res.json({ ok: true, runs: registry.list().length }));
 
   return { app, registry };
@@ -197,6 +228,9 @@ export async function startServer(port = 4200, opts: ServerOptions = {}): Promis
     async close() {
       wss.close();
       await registry.stopAll();
+      // Server-sent event streams are deliberately long-lived, so a plain close() waits forever for
+      // consoles that are still attached. Shutting down means dropping them, not outliving them.
+      server.closeAllConnections();
       await new Promise<void>((r) => server.close(() => r()));
     },
   };

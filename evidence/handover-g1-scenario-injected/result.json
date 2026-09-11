@@ -1,0 +1,27 @@
+{
+  "status": "success",
+  "outputs": {
+    "savingsBalance": {
+      "amount": 1234.56,
+      "currency": "USD"
+    }
+  },
+  "runId": "run-2026-09-11-ed2de7",
+  "capabilityId": "member-savings-balance",
+  "capabilityVersion": 2,
+  "startedAt": "2026-09-11T17:31:30.549Z",
+  "finishedAt": "2026-09-11T17:31:53.498Z",
+  "durationMs": 22949,
+  "stepsRun": 12,
+  "sideEffects": "none",
+  "drift": [],
+  "recoveries": [
+    {
+      "stepId": "step:click-button-search",
+      "code": "SESSION_EXPIRED",
+      "recovery": "prelude:login",
+      "attempt": 1
+    }
+  ],
+  "evidenceDir": "evidence/run-2026-09-11-ed2de7"
+}

@@ -288,7 +288,92 @@ writing down rather than leaving as undocumented behaviour that happens to work.
 
 ## 5. Escalation & handoff
 
-_Filled in with slices 007/008._
+Escalation here means handing a person the *same live browser*, not filing a ticket about a run that
+already died. The session, its cookies, the logged-in operator and any half-filled form are exactly
+as the automation left them, because nothing was restarted. The test that matters asserts this from
+the outside: a replay that pauses for approval and then resumes finishes in seven steps, the same
+count as an uninterrupted run. A restart would have had to sign in again and would show more.
+
+### One controller, enforced
+
+`controller` is one of none, agent, replay, or human, and `state` is one of idle, running, paused,
+human_control, resuming, completed, aborted. `paused` and `human_control` are deliberately distinct:
+a run can be waiting for a person with nobody yet looking at it, which is not the same as somebody
+holding the browser. That difference decides whether frames are worth streaming and whether a
+dropped connection should return the work to the queue.
+
+The interesting decision was how to enforce it. The obvious approach is a lease token threaded
+through `Surface.act` and every caller of it. That would have put session control into the surface
+contract — and a desktop surface has no idea what an intervention is, so the abstraction that the
+whole heterogeneity story rests on would have acquired a concept from the wrong layer.
+
+Instead the lease wraps. `LeasedSurface` implements `Surface`, passes every read straight through,
+and gates the four mutating calls on a lease bound at construction. The session hands the engine one
+and the operator's socket another; issuing a new lease disarms every reference to the old one, even
+one captured mid-await. The result is that `executor.ts` and `loop.ts` are untouched by this slice,
+and the rule is impossible to forget rather than merely documented.
+
+Reads stay open on purpose. A paused run must keep rendering for whoever is looking at it.
+
+### Two bugs the tests found in this design
+
+Handing back originally re-issued the engine a *new* lease. But the engine holds a single surface for
+the whole run, so minting it a fresh id left its own reference stale and turned every resume into a
+`CONTROL_VIOLATION`. The engine's lease is now created once and restored on hand-back; a human's is
+always fresh, so a console that keeps its socket open cannot keep acting after handing back. The
+test asserts both directions.
+
+Resolving a manual pause never released the engine, because a pause has no waiting escalation to
+answer — the engine is blocked inside `shouldContinue`, not inside `onEscalate`. Two different
+mechanisms that look identical from the console.
+
+### The run clock stops
+
+An intervention can legitimately last fifteen minutes against a five-minute run budget. Any time the
+engine spends blocked on a person is added back to the deadline, and the controller is consulted
+*before* the clock is tested, so a resumed run cannot trip `RUN_TIMEOUT` on the very step it just
+came back to. Without this every real handover would return to a run that had already expired, and
+the per-step assertion windows — clamped to the remaining budget in slice 006 — would have floored
+at their minimum and failed on screens that were fine.
+
+### What a human does is captured, not just permitted
+
+Every operator click is hit-tested against the same accessibility tree the agent uses, and a full
+multi-candidate locator is captured before the click lands, because afterwards the element may be
+gone. A manual fix therefore has the same fidelity as an agent action and could be proposed as a
+patch to the artifact.
+
+Typed text is redacted by *field*, not by value. The redactor only knows the secrets it was given,
+and an operator types things it has never seen — so the only safe signal is what the text is going
+into, decided by the same sensitive-name heuristic the perception layer uses. An unidentified field
+is treated as sensitive.
+
+### The control plane
+
+`cua serve` binds to loopback only: there is no authentication and the API can drive a browser.
+It exposes runs, an SSE stream of the evidence log, interventions with claim and resolve, artifacts,
+and a WebSocket live channel. The console in slice 008 is a client of this, and `scripts/demo-handover.mjs`
+drives the entire escalation story with no UI at all — which is the check that the API is real.
+
+Frames stream only while a run is stopped and somebody is attached. Streaming while the engine drives
+would contend with its own observations over the same connection and show a blur nobody is acting on.
+A pending dialog blocks screenshots entirely, so the frame carries the dialog instead of freezing.
+
+The socket never holds a lease of its own. It asks the session to claim an intervention and gets back
+a leased surface, so a console that forgets to claim simply cannot act, and the refusal is a clear
+message rather than a silent write into somebody else's browser.
+
+### Sandbox controls for the demo
+
+`POST /runs/:id/scenario` arms one of the mock application's faults inside the *running* browser, so
+the next thing the live flow does hits it. That is what makes the console's scenario buttons a
+demonstration of recovery rather than a re-run with different flags: the operator perturbs a run
+already in flight. `POST /runs/:id/pause` stops a healthy run between steps for the same reason.
+
+Running the demo with a session expiry injected mid-pause shows the whole loop: the engine stops for
+approval, a human approves, the injected expiry fires, the engine re-authenticates and restarts the
+flow, and the restarted flow correctly asks for approval a *second* time — because a risky step that
+runs twice must be approved twice.
 
 ## 6. Safety
 

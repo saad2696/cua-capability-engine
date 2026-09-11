@@ -24,7 +24,7 @@ Slice-by-slice build. See [openspec/ROADMAP.md](./openspec/ROADMAP.md) for what 
 | 004 | Surface abstraction and perception | done |
 | 005 | LLM discovery loop and recorder | done |
 | 006 | Deterministic replay | done |
-| 007 | Session control and escalation | planned |
+| 007 | Session control and escalation | done |
 | 008 | Operator console | planned |
 | 009 | Policy guardrails | planned |
 | 010 | Evidence, README, REPORT | planned |
@@ -128,8 +128,62 @@ pnpm cua replay artifacts/member-savings-balance@2.json --param memberId=10042 -
 # 4. the same artifact, a different member — parameters are real
 pnpm cua replay artifacts/member-savings-balance@2.json --param memberId=10077 --allow-draft
 
-# 5. escalation + human takeover (slices 007/008)
-pnpm cua serve && pnpm dev:console
+# 5. the control plane: runs, live events, interventions, take-control
+pnpm cua serve
+```
+
+### Escalation: a human takes over the same live session
+
+This is the part the brief cares about most, and it runs with no UI at all. With the target app and
+`cua serve` both running:
+
+```bash
+node scripts/demo-handover.mjs --fault session_expired
+```
+
+```
+1. starting a replay of member-savings-balance@2 for member 10042
+2. the engine stopped and asked for a person: risky_step at step:click-button-search
+   run state is now paused — nobody is driving
+3. arming "session_expired" inside the live browser while the run is parked
+4. taking control over the websocket
+   input before claiming is refused: "claim an intervention before sending input"
+   claimed; run state is human_control
+   receiving live frames of the automation's own browser: 38KB at http://localhost:4100/
+5. handing control back with resumeAt=same
+   approved again after a restart (2 total)
+6. the same session finished: success
+   outputs {"savingsBalance":{"amount":1234.56,"currency":"USD"}}
+   recoveries SESSION_EXPIRED via prelude:login
+   12 steps, side effects none, handoffs 2
+```
+
+The browser is never restarted. Without the injected fault the run finishes in seven steps, the same
+count as an uninterrupted replay, which is how you can tell the handover resumed the session rather
+than starting a new one.
+
+### The API
+
+Loopback only: there is no authentication and it can drive a browser.
+
+```
+GET  /api/runs                         GET  /api/runs/:id
+POST /api/replay                       POST /api/discover
+GET  /api/runs/:id/events              server-sent events: the evidence log, live
+POST /api/runs/:id/pause               stop a healthy run between steps
+POST /api/runs/:id/scenario            arm a fault inside the running browser
+POST /api/runs/:id/abort
+GET  /api/interventions                POST /api/interventions/:id/claim
+POST /api/interventions/:id/resolve    {"resumeAt":"same|next|abort","note":"..."}
+GET  /api/artifacts                    GET  /api/artifacts/:file
+WS   /ws/runs/:id/live                 frames out, mouse/keyboard/dialog in
+```
+
+```bash
+curl -s localhost:4200/api/artifacts
+curl -s -X POST localhost:4200/api/replay -H 'content-type: application/json' \
+  -d '{"artifactPath":"member-savings-balance@2.json","params":{"memberId":"10042"}}'
+curl -s -N localhost:4200/api/runs/<runId>/events
 ```
 
 ### Replay, and what it does when things go wrong

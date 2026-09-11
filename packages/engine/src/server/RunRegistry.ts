@@ -8,13 +8,15 @@
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { Capability, Event, ReplayResult } from "@cua/schema";
+import type { Capability, DiscoveryResult, Event, ReplayResult } from "@cua/schema";
+import { runDiscovery } from "../agent/loop.js";
 import { EvidenceWriter } from "../evidence/EvidenceWriter.js";
 import { Redactor } from "../evidence/redactor.js";
 import { basicPolicy } from "../policy/basic.js";
 import { replay } from "../replay/executor.js";
 import { Session } from "../session/Session.js";
 import { PlaywrightSurface } from "../surface/playwright/PlaywrightSurface.js";
+import type { LlmProvider } from "../llm/types.js";
 import type { Surface } from "../surface/types.js";
 
 export type RunStatus = "starting" | "running" | "paused" | "human_control" | "completed" | "failed";
@@ -35,6 +37,8 @@ export interface RunRecord {
   startedAt: string;
   finishedAt?: string;
   result?: ReplayResult;
+  /** Discovery runs report a different shape; the console renders whichever is present. */
+  discovery?: DiscoveryResult | { status: string; stepsTaken: number; artifactPath?: string };
   evidenceDir: string;
   /** The run's evidence writer: the server subscribes to it to stream events live. */
   evidence: EvidenceWriter;
@@ -57,6 +61,18 @@ export interface StartReplayInput {
   escalateOnFailure?: boolean;
   riskyStepsRequire?: "approvedArtifact" | "humanConfirm" | "block";
   runTimeoutMs?: number;
+  interventionTimeoutMs?: number;
+}
+
+export interface StartDiscoveryInput {
+  goal: string;
+  url: string;
+  capabilityId: string;
+  provider: LlmProvider;
+  params?: Record<string, string>;
+  secrets?: Record<string, string>;
+  maxSteps?: number;
+  headless?: boolean;
   interventionTimeoutMs?: number;
 }
 
@@ -156,6 +172,74 @@ export class RunRegistry {
           confirmRisky: session.confirmRisky,
         });
         record.result = result;
+      } catch (e) {
+        evidence.event({ type: "error", code: "SURFACE_ERROR", message: (e as Error).message });
+      } finally {
+        record.finishedAt = new Date().toISOString();
+        session.finish(record.status === "completed" ? "completed" : "aborted");
+        await surface.close().catch(() => {});
+        this.changed(record);
+      }
+    })();
+
+    return record;
+  }
+
+  /**
+   * Start an LLM-driven discovery run under the same session control as a replay.
+   *
+   * Discovery escalates rather than guesses: a risky action becomes an intervention a person answers
+   * in the live browser, instead of a flag decided before the run began. The provider is injected,
+   * so the console can drive either a real model or the scripted fake one with no key and no cost.
+   */
+  async startDiscovery(input: StartDiscoveryInput): Promise<RunRecord> {
+    const runId = `run-${new Date().toISOString().slice(0, 10)}-${randomUUID().slice(0, 6)}`;
+    const params = input.params ?? {};
+    const secrets = input.secrets ?? {};
+    const origin = new URL(input.url).origin;
+
+    const redactor = new Redactor({ secrets: { ...secrets, ...Object.fromEntries(Object.entries(params).map(([k, v]) => [`param:${k}`, v])) } });
+    const evidence = new EvidenceWriter(runId, this.evidenceRoot, redactor);
+    const policy = basicPolicy({ allowedOrigins: [origin], blockedUrlPatterns: ["/__faults", "/__reset"] });
+    const surface = new PlaywrightSurface({ headless: input.headless ?? true, allowRequest: (u) => policy.allowRequest(u), tracePath: join(evidence.dir, "trace.zip") });
+    surface.onPageSwitch((u) => (policy.allowRequest(u) ? "adopt" : "close"));
+
+    const record: RunRecord = {
+      id: runId, kind: "discover", capabilityId: input.capabilityId, capabilityVersion: 1, params,
+      get status(): RunStatus {
+        if (this.finishedAt) return this.discovery?.status === "completed" || this.discovery?.status === "needsReview" ? "completed" : "failed";
+        if (!this.session) return "starting";
+        if (this.session.state === "human_control") return "human_control";
+        if (this.session.state === "paused") return "paused";
+        return "running";
+      },
+      startedAt: new Date().toISOString(), evidenceDir: evidence.dir, evidence, surface, origins: [origin],
+      recent: [], session: undefined as unknown as Session,
+    };
+    const session = new Session({
+      runId, surface, evidence, engineController: "agent", capabilityId: input.capabilityId, goal: input.goal,
+      ...(input.interventionTimeoutMs ? { interventionTimeoutMs: input.interventionTimeoutMs } : {}),
+      onChange: () => this.changed(record),
+    });
+    record.session = session;
+    this.runs.set(runId, record);
+    evidence.subscribe((e) => {
+      record.recent.push(e);
+      if (record.recent.length > RECENT_CAP) record.recent.shift();
+    });
+
+    const engineSurface = session.start();
+    this.changed(record);
+
+    void (async () => {
+      try {
+        const trace = await runDiscovery({
+          goal: input.goal, url: input.url, params, secrets, provider: input.provider,
+          surface: engineSurface, policy, evidence,
+          ...(input.maxSteps ? { maxSteps: input.maxSteps } : {}),
+          approveRisky: async (decision) => session.requestApproval(`${decision.tool}: ${JSON.stringify(decision.args).slice(0, 200)}`),
+        });
+        record.discovery = { status: trace.status, stepsTaken: trace.steps.length };
       } catch (e) {
         evidence.event({ type: "error", code: "SURFACE_ERROR", message: (e as Error).message });
       } finally {

@@ -306,6 +306,16 @@ export class Session implements LeaseAuthority {
     return answer === "same";
   };
 
+  /**
+   * A generic approval, for callers whose "risky thing" is not a replay step — the discovery loop
+   * asks about a *decision the model just made*, which has no step id yet. The operator's answer
+   * means the same thing either way: `same` is "go ahead", anything else is "do not".
+   */
+  readonly requestApproval = async (what: string, stepId?: string): Promise<boolean> => {
+    const iv = await this.openIntervention("RISKY_STEP_NEEDS_APPROVAL", "risky_step", stepId, -1, what);
+    return (await this.await_(iv)) === "same";
+  };
+
   private async openIntervention(
     reason: EscalationReason | "MANUAL_PAUSE", kind: InterventionKind,
     stepId: string | undefined, stepIndex: number, detail: string, screenshot?: string,
@@ -358,7 +368,10 @@ export class Session implements LeaseAuthority {
 
   private persist(): void {
     try {
-      this.opts.evidence.json("interventions.json", this.allInterventions, false);
+      // Redacted like every other artefact of a run. An intervention carries the screen an operator
+      // saw — its URL and its accessibility elements — and on this application the member id is in
+      // the path. Writing it raw put the one value the whole pipeline avoids straight back on disk.
+      this.opts.evidence.json("interventions.json", this.allInterventions);
     } catch {
       /* evidence is best effort; never fail a run over it */
     }

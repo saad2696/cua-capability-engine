@@ -13,6 +13,7 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import WebSocket from "ws";
 import { createApp } from "../../../../apps/target-app/src/server.js";
+import { FakeProvider, type ScriptStep } from "../llm/FakeProvider.js";
 import { startServer, type RunningServer } from "./server.js";
 
 let target: Server;
@@ -27,7 +28,11 @@ beforeAll(async () => {
   await new Promise<void>((r) => target.once("listening", r));
   base = `http://localhost:${(target.address() as { port: number }).port}`;
   evidenceRoot = mkdtempSync(join(tmpdir(), "cua-server-"));
-  api = await startServer(0, { evidenceDir: evidenceRoot, secrets: { TARGET_USER: "demo", TARGET_PASSWORD: "demo" }, interventionTimeoutMs: 120_000 });
+  api = await startServer(0, {
+    evidenceDir: evidenceRoot, secrets: { TARGET_USER: "demo", TARGET_PASSWORD: "demo" }, interventionTimeoutMs: 120_000,
+    // The scripted provider, so the discovery path is exercised with no API key and no cost.
+    provider: () => new FakeProvider(DISCOVERY_SCRIPT),
+  });
 }, 60_000);
 
 afterAll(async () => {
@@ -35,6 +40,17 @@ afterAll(async () => {
   await new Promise<void>((r) => target.close(() => r()));
   rmSync(evidenceRoot, { recursive: true, force: true });
 });
+
+/** Enough of goal G1 to reach a risky action, so discovery has something to escalate about. */
+const DISCOVERY_SCRIPT: ScriptStep[] = [
+  (_c, h) => ({ tool: "type", args: { index: h.el("textbox", "User Name"), text: "{TARGET_USER}" }, reasoning: "user name" }),
+  (_c, h) => ({ tool: "type", args: { index: h.el("textbox", "Password"), text: "{TARGET_PASSWORD}" }, reasoning: "password" }),
+  (_c, h) => ({ tool: "click", args: { index: h.el("button", "Sign In") }, reasoning: "sign in" }),
+  (_c, h) => ({ tool: "type", args: { index: h.el("textbox", "Member ID"), text: "{memberId}" }, reasoning: "member id" }),
+  (_c, h) => ({ tool: "click", args: { index: h.el("button", "Search") }, reasoning: "search" }),
+  () => ({ tool: "extract", args: { output: "savingsBalance", value: "$1,234.56", description: "Current savings balance", rowLabel: "Savings", columnHeader: "Current Balance" }, reasoning: "read the balance" }),
+  () => ({ tool: "done", args: { summary: "Read the savings balance" }, reasoning: "done" }),
+];
 
 const url = (p: string) => `http://127.0.0.1:${api.port}${p}`;
 const post = (p: string, body?: unknown) => fetch(url(p), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body ?? {}) });
@@ -221,5 +237,58 @@ describe("scenario injection perturbs a run that is already in flight", () => {
     const res = await post(`/api/runs/${started.id}/scenario`, { fault: "slow" });
     expect(res.status).toBe(400);
     expect((await res.json()).error).toContain("already finished");
+  }, 120_000);
+});
+
+describe("discovery runs under the same session control", () => {
+  it("starts a discovery run from the API and drives it to completion", async () => {
+    const started = await (await post("/api/discover", { goal: "Look up member {memberId} and read the current savings balance", url: `${base}/`, capabilityId: "member-savings-balance", params: { memberId: "10042" } })).json() as { id: string; kind: string };
+    expect(started.kind).toBe("discover");
+    const done = await until(async () => {
+      const r = await runOf(started.id);
+      return r.status === "completed" || r.status === "failed" ? r : undefined;
+    });
+    expect(done.status).toBe("completed");
+    // The model's decisions are in the log; this is the one path where they should be.
+    const reader = (await get(`/api/runs/${started.id}/events`)).body!.getReader();
+    const chunk = await reader.read();
+    await reader.cancel();
+    expect(new TextDecoder().decode(chunk.value)).toContain("run_started");
+  }, 120_000);
+
+  it("reports a missing model provider as a bad request, not a crash", async () => {
+    const api2 = await startServer(0, { evidenceDir: evidenceRoot, provider: () => { throw new Error("ANTHROPIC_API_KEY is not set"); } });
+    try {
+      const res = await fetch(`http://127.0.0.1:${api2.port}/api/discover`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ goal: "g", url: base }) });
+      expect(res.status).toBe(400);
+      expect((await res.json()).error).toContain("ANTHROPIC_API_KEY");
+    } finally {
+      await api2.close();
+    }
+  }, 30_000);
+});
+
+describe("nothing a run touches leaks the values it was given", () => {
+  it("no parameter or secret appears in any file a handover writes", async () => {
+    const { readdirSync, readFileSync: read, statSync } = await import("node:fs");
+    const art = await artifact((c) => { (c["steps"] as { risk: string }[])[1]!.risk = "risky"; });
+    const started = await (await post("/api/replay", { artifact: art, params: { memberId: "10042" } })).json() as { id: string; evidenceDir: string };
+    const iv = await until(async () => (await runOf(started.id)).session.interventions.find((i) => i.status === "open"));
+    await post(`/api/interventions/${iv.id}/claim`, { by: "tester" });
+    await post(`/api/interventions/${iv.id}/resolve`, { resumeAt: "same", by: "tester" });
+    await until(async () => {
+      const r = await runOf(started.id);
+      return r.status === "completed" || r.status === "failed" ? r : undefined;
+    });
+
+    // interventions.json is the one that got this wrong: it records the screen an operator saw, and
+    // on this application the member id is in the URL.
+    const files = readdirSync(started.evidenceDir).filter((f) => statSync(join(started.evidenceDir, f)).isFile() && !f.endsWith(".zip"));
+    expect(files).toContain("interventions.json");
+    for (const f of files) {
+      const text = read(join(started.evidenceDir, f), "utf8");
+      expect(text, `${f} leaked the member id`).not.toContain("10042");
+      expect(text, `${f} leaked the password`).not.toContain("demo");
+    }
   }, 120_000);
 });

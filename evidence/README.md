@@ -38,5 +38,23 @@ Failure and escalation runs additionally carry the failure bundle: `failure-<ste
 naming the expected state, the observed state and a suggested next action), a full-page screenshot,
 a viewport screenshot, an accessibility snapshot, and the page's visible text.
 
+## Handovers (slice 007)
+
+Both produced by `node scripts/demo-handover.mjs` against `cua serve` — no UI involved. The search
+step is marked risky, so the engine stops and asks for a person before clicking it.
+
+| directory | what happened | steps |
+|---|---|---|
+| `handover-g1-approve-and-resume/` | The engine paused, an operator took control over the websocket, looked at a live frame, and handed back with `resumeAt: same`. | 7 |
+| `handover-g1-scenario-injected/` | The same, but a session expiry was armed inside the running browser while it was parked. The engine re-authenticated, restarted the flow, and asked for approval a second time. | 12 |
+
+The seven is the point. An uninterrupted replay of this capability is also seven steps, so the
+handover resumed the session it paused in rather than starting a new one. The twelve in the second
+run is the re-authentication and the restarted flow, not a restarted browser.
+
+Read `events.jsonl` in either for the control trail: `control_change` records every transfer with the
+lease id, `resume` records the operator's answer, and `interventions.json` holds the request an
+operator saw, including who claimed it and how they resolved it.
+
 No parameter or secret value appears in any file in this directory. The test suite asserts it, and
-`grep -r 10042 evidence/replay-*` returns nothing.
+`grep -r 10042 evidence/` returns nothing.

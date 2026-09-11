@@ -1,0 +1,20 @@
+{
+  "status": "success",
+  "outputs": {
+    "savingsBalance": {
+      "amount": 1234.56,
+      "currency": "USD"
+    }
+  },
+  "runId": "run-2026-09-11-b515e5",
+  "capabilityId": "member-savings-balance",
+  "capabilityVersion": 2,
+  "startedAt": "2026-09-11T17:31:27.631Z",
+  "finishedAt": "2026-09-11T17:31:30.466Z",
+  "durationMs": 2835,
+  "stepsRun": 7,
+  "sideEffects": "none",
+  "drift": [],
+  "recoveries": [],
+  "evidenceDir": "evidence/run-2026-09-11-b515e5"
+}

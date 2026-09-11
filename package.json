@@ -16,7 +16,9 @@
     "typecheck": "pnpm -r --filter './packages/**' --filter './apps/cli' --filter './apps/target-app' typecheck",
     "dev:target": "pnpm --filter @cua/target-app dev",
     "dev:console": "pnpm --filter @cua/operator-console dev",
-    "cua": "tsx apps/cli/src/main.ts"
+    "cua": "tsx apps/cli/src/main.ts",
+    "serve": "tsx apps/cli/src/main.ts serve",
+    "demo:handover": "node scripts/demo-handover.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.30.0",
