@@ -327,6 +327,19 @@ Resolving a manual pause never released the engine, because a pause has no waiti
 answer — the engine is blocked inside `shouldContinue`, not inside `onEscalate`. Two different
 mechanisms that look identical from the console.
 
+A third, in the server: every run stuck on "running" forever even after finishing successfully. The
+run's status was a stored field, and releasing the engine's lease during teardown fired a change
+callback that recomputed it from a session still marked running — clobbering the value the `finally`
+block had written a line earlier. A run's status is a function of what has happened to it, so it is
+now written as one, and the whole class of bug goes away. The general lesson is the one worth
+keeping: state that is derivable should be derived, especially when callbacks can fire during
+teardown in an order nobody is holding in their head.
+
+A fourth, found only because a test claimed over HTTP and then opened the socket: the disconnect
+handler keyed off whether *that socket* had done the claiming, so an operator who took control one
+way and dropped off the other left the intervention claimed by nobody until it expired fifteen
+minutes later. It now derives from the session's state, like everything else here.
+
 ### The run clock stops
 
 An intervention can legitimately last fifteen minutes against a five-minute run budget. Any time the
@@ -362,6 +375,20 @@ A pending dialog blocks screenshots entirely, so the frame carries the dialog in
 The socket never holds a lease of its own. It asks the session to claim an intervention and gets back
 a leased surface, so a console that forgets to claim simply cannot act, and the refusal is a clear
 message rather than a silent write into somebody else's browser.
+
+### Which URL the demo actually points at
+
+The entry gate in the console takes a portal URL, and there is a real decision hiding in that. A
+capability artifact carries its own `policy.allowedOrigins`, and replay pre-flight refuses to run
+against anything outside them. So a URL typed into the gate could either override the artifact's
+origins or be constrained by them.
+
+It is constrained by them. The gate offers the origins the artifact already declares and pre-fills
+the first; pointing a capability at an origin it was not recorded against is exactly the substitution
+the policy exists to prevent, and allowing it from a text box would make the guarantee cosmetic. A
+different origin is a different tenant, which is the overlay mechanism in the heterogeneity section,
+not a free-text field. Discovery is the opposite case and takes any allowlisted URL, because
+discovery is how an artifact learns what origin it belongs to in the first place.
 
 ### Sandbox controls for the demo
 

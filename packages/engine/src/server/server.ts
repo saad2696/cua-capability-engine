@@ -279,6 +279,10 @@ function attachLive(ws: WebSocket, run: RunRecord): void {
 
   ws.on("close", () => {
     streamer.stop();
-    if (leased) run.session.operatorDisconnected();
+    // Derived from the session, not from whether *this socket* did the claiming: an operator may
+    // claim over HTTP and then open the socket, and their disconnect must still start the grace
+    // timer. Keying off the local variable left such an intervention claimed by nobody until it
+    // expired a quarter of an hour later.
+    if (run.session.state === "human_control") run.session.operatorDisconnected();
   });
 }

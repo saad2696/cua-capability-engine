@@ -176,7 +176,9 @@ export class RunRegistry {
         evidence.event({ type: "error", code: "SURFACE_ERROR", message: (e as Error).message });
       } finally {
         record.finishedAt = new Date().toISOString();
-        session.finish(record.status === "completed" ? "completed" : "aborted");
+        // Read from the result rather than from record.status: the getter derives its answer from
+        // finishedAt, so asking it here would silently depend on the line above running first.
+        session.finish(record.result?.status === "success" || record.result?.status === "business_outcome" ? "completed" : "aborted");
         await surface.close().catch(() => {});
         this.changed(record);
       }
@@ -244,7 +246,8 @@ export class RunRegistry {
         evidence.event({ type: "error", code: "SURFACE_ERROR", message: (e as Error).message });
       } finally {
         record.finishedAt = new Date().toISOString();
-        session.finish(record.status === "completed" ? "completed" : "aborted");
+        const ok = record.discovery?.status === "completed" || record.discovery?.status === "needsReview";
+        session.finish(ok ? "completed" : "aborted");
         await surface.close().catch(() => {});
         this.changed(record);
       }

@@ -521,8 +521,10 @@ export async function replay(opts: ReplayOptions): Promise<ReplayResult> {
     // 5. expect
     // Never let a single assertion's poll window outlive the whole run's budget: three retries of a
     // long-timeout step would otherwise overshoot the deadline before anyone checks it again.
-    const stepBudget = Math.max(500, Math.min(step.timeoutMs, state.deadline - Date.now()));
+    // Recomputed per assertion, because a step with several of them spends real time on each.
+    const budget = () => Math.max(500, Math.min(step.timeoutMs, state.deadline - Date.now()));
     for (const a of step.expect) {
+      const stepBudget = budget();
       const v: Verdict = await waitForAssertion(a, surface, state.ctx, stepBudget, step.target, frame);
       evidence.event({ type: "verify", stepId: step.id, stepIndex: index, assertion: describeAssertion(a), ok: v.ok, observed: v.observed.slice(0, 200) });
       if (!v.ok) {

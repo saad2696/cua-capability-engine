@@ -157,6 +157,34 @@ describe("a human takes control of the same live session", () => {
     expect(done.result?.stepsRun).toBe(7);
   }, 120_000);
 
+  it("an operator who claimed over HTTP still loses control when their socket drops", async () => {
+    // The two halves of taking control can arrive over different transports: claim with a POST, then
+    // open the socket for frames. The disconnect handler must key off the session's state, not off
+    // whether that particular socket did the claiming.
+    const art = await artifact((c) => { (c["steps"] as { risk: string }[])[1]!.risk = "risky"; });
+    const started = await (await post("/api/replay", { artifact: art, params: { memberId: "10042" } })).json() as { id: string };
+    const iv = await until(async () => (await runOf(started.id)).session.interventions.find((i) => i.status === "open"));
+
+    await post(`/api/interventions/${iv.id}/claim`, { by: "tester" });
+    expect((await runOf(started.id)).session.state).toBe("human_control");
+
+    const ws = new WebSocket(`ws://127.0.0.1:${api.port}/ws/runs/${started.id}/live`);
+    await new Promise<void>((r) => ws.once("open", () => r()));
+    ws.close();
+
+    // The grace period is 60s by default, so the run must still be theirs a moment later.
+    await new Promise((r) => setTimeout(r, 200));
+    const after = await runOf(started.id);
+    expect(after.session.state).toBe("human_control");
+    expect(after.session.interventions.find((i) => i.id === iv.id)?.status).toBe("claimed");
+
+    await post(`/api/interventions/${iv.id}/resolve`, { resumeAt: "abort", by: "tester" });
+    await until(async () => {
+      const r = await runOf(started.id);
+      return r.status === "completed" || r.status === "failed" ? r : undefined;
+    });
+  }, 120_000);
+
   it("a manual pause stops a healthy run between steps and resumes it", async () => {
     const started = await (await post("/api/replay", { artifact: await artifact(), params: { memberId: "10077" } })).json() as { id: string };
     const pause = await post(`/api/runs/${started.id}/pause`, { by: "tester" });
