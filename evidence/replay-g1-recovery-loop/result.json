@@ -1,0 +1,32 @@
+{
+  "status": "failure",
+  "code": "RECOVERY_LOOP",
+  "atStep": "step:click-button-sign-in",
+  "expected": "at most 1 recovery(ies) for SESSION_EXPIRED",
+  "observed": "SESSION_EXPIRED triggered 2 times at this step",
+  "evidence": {
+    "screenshot": "screenshots/008-failure-click-button-sign-in-viewport.png",
+    "fullPage": "screenshots/007-failure-click-button-sign-in-fullpage.png",
+    "a11y": "failure-click-button-sign-in-a11y.json",
+    "text": "failure-click-button-sign-in-text.txt",
+    "narrative": "failure-click-button-sign-in.md"
+  },
+  "runId": "replay-2026-09-11160-bc2624",
+  "capabilityId": "member-savings-balance",
+  "capabilityVersion": 2,
+  "startedAt": "2026-09-11T16:06:07.295Z",
+  "finishedAt": "2026-09-11T16:06:46.108Z",
+  "durationMs": 38813,
+  "stepsRun": 6,
+  "sideEffects": "none",
+  "drift": [],
+  "recoveries": [
+    {
+      "stepId": "step:click-button-sign-in",
+      "code": "SESSION_EXPIRED",
+      "recovery": "prelude:login",
+      "attempt": 1
+    }
+  ],
+  "evidenceDir": "evidence/replay-g1-recovery-loop"
+}

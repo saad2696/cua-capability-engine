@@ -22,10 +22,13 @@
 - [x] 6.21 Visual drift soft signal — box-overlap (IoU) of the resolved control against `recordedBBox`, not SSIM: it needs no stored reference image and answers the more useful question ("did the control move") directly
 - [x] 6.22 Playwright trace + failure.md narrative
 - [x] 6.23 Budgets, cancellation, run lock
-- [x] 6.24 Tests: wrong-screen; optional step absent; retryable=false not retried; sideEffects possible after confirm failure; new tab same-origin adopted; resume-from after pause; extraction fallback; cancellation closes browser
+- [x] 6.24 Tests: wrong-screen; optional step absent; retryable=false not retried; sideEffects possible after confirm failure; extraction fallback; cancellation closes browser; UNSAFE_RESTART after a committed action; resume skips replayed steps
 
 Deferred with a reason:
 - 6.18 new tab / detached element handling — the page-switch guard and per-step re-resolution are in
   place from slice 004; a dedicated multi-tab test needs the session controller from slice 007.
 - 6.19 input robustness beyond fill/select-by-label — the remaining cases (checkbox state-assert)
   have no instance in either goal flow; revisit if a capability needs one.
+- new-tab adoption and resume-after-pause as end-to-end tests (listed under 6.24) — both need a live
+  session that outlives the process, which is the session controller in slice 007. `--resume-from`
+  itself is tested for what it skips and for re-establishing the prelude on demand.

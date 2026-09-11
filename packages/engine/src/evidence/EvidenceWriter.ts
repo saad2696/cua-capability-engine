@@ -38,16 +38,17 @@ export class EvidenceWriter {
     return join("screenshots", name);
   }
 
+  /** Save JSON; returns the path relative to the run dir, like {@link screenshot}, so a bundle's
+   *  file references stay valid however the evidence directory is moved or shared. */
   json(name: string, value: unknown, redact = true): string {
-    const path = join(this.dir, name);
-    writeFileSync(path, JSON.stringify(redact ? this.redactor.value(value) : value, null, 2) + "\n");
-    return path;
+    writeFileSync(join(this.dir, name), JSON.stringify(redact ? this.redactor.value(value) : value, null, 2) + "\n");
+    return name;
   }
 
+  /** Save text; returns the path relative to the run dir. */
   text(name: string, value: string, redact = true): string {
-    const path = join(this.dir, name);
-    writeFileSync(path, redact ? this.redactor.text(value) : value);
-    return path;
+    writeFileSync(join(this.dir, name), redact ? this.redactor.text(value) : value);
+    return name;
   }
 
   relative(from = process.cwd()): string {

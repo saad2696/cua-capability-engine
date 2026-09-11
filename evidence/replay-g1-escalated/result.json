@@ -1,0 +1,25 @@
+{
+  "status": "escalated",
+  "interventionId": "intervention-843c7087",
+  "reason": "REPLAY_FAILURE",
+  "atStep": "step:click-button-sign-in",
+  "detail": "RECOVERY_LOOP: at most 1 recovery(ies) for SESSION_EXPIRED — SESSION_EXPIRED triggered 2 times at this step",
+  "runId": "replay-2026-09-11160-8f16cf",
+  "capabilityId": "member-savings-balance",
+  "capabilityVersion": 2,
+  "startedAt": "2026-09-11T16:07:28.804Z",
+  "finishedAt": "2026-09-11T16:08:07.607Z",
+  "durationMs": 38803,
+  "stepsRun": 6,
+  "sideEffects": "none",
+  "drift": [],
+  "recoveries": [
+    {
+      "stepId": "step:click-button-sign-in",
+      "code": "SESSION_EXPIRED",
+      "recovery": "prelude:login",
+      "attempt": 1
+    }
+  ],
+  "evidenceDir": "evidence/replay-g1-escalated"
+}

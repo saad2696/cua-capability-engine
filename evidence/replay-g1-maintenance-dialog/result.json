@@ -1,0 +1,27 @@
+{
+  "status": "success",
+  "outputs": {
+    "savingsBalance": {
+      "amount": 1234.56,
+      "currency": "USD"
+    }
+  },
+  "runId": "replay-2026-09-11160-0b41d8",
+  "capabilityId": "member-savings-balance",
+  "capabilityVersion": 2,
+  "startedAt": "2026-09-11T16:07:15.665Z",
+  "finishedAt": "2026-09-11T16:07:27.951Z",
+  "durationMs": 12286,
+  "stepsRun": 7,
+  "sideEffects": "none",
+  "drift": [],
+  "recoveries": [
+    {
+      "stepId": "step:open-app",
+      "code": "MAINTENANCE_NOTICE",
+      "recovery": "dismissDialog",
+      "attempt": 1
+    }
+  ],
+  "evidenceDir": "evidence/replay-g1-maintenance-dialog"
+}

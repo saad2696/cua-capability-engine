@@ -66,7 +66,7 @@ export const ReplayResultSchema = z.discriminatedUnion("status", [
     atStep: StepIdSchema.optional(),
     expected: z.string(),
     observed: z.string(),
-    evidence: z.object({ screenshot: z.string().optional(), fullPage: z.string().optional(), a11y: z.string().optional(), trace: z.string().optional(), narrative: z.string().optional() }).default({}),
+    evidence: z.object({ screenshot: z.string().optional(), fullPage: z.string().optional(), a11y: z.string().optional(), text: z.string().optional(), trace: z.string().optional(), narrative: z.string().optional() }).default({}),
     ...common,
   }),
   z.object({ status: z.literal("escalated"), interventionId: z.string().min(1), reason: EscalationReasonSchema, atStep: StepIdSchema.optional(), detail: z.string(), ...common }),

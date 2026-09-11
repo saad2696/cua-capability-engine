@@ -1,0 +1,20 @@
+{
+  "status": "success",
+  "outputs": {
+    "savingsBalance": {
+      "amount": 8900.04,
+      "currency": "USD"
+    }
+  },
+  "runId": "replay-2026-09-11160-0bfbad",
+  "capabilityId": "member-savings-balance",
+  "capabilityVersion": 2,
+  "startedAt": "2026-09-11T16:05:08.747Z",
+  "finishedAt": "2026-09-11T16:05:10.847Z",
+  "durationMs": 2100,
+  "stepsRun": 7,
+  "sideEffects": "none",
+  "drift": [],
+  "recoveries": [],
+  "evidenceDir": "evidence/replay-g1-other-member"
+}

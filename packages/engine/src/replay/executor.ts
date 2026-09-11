@@ -94,18 +94,29 @@ interface RunState {
 
 const BACKOFF_MS = [500, 1500, 4000];
 
-/** Below this box overlap, a resolved control is reported as having moved. Soft: never fails a run. */
-const VISUAL_DRIFT_THRESHOLD = 0.6;
+/** Below this similarity, a resolved control is reported as having moved. Soft: never fails a run. */
+export const VISUAL_DRIFT_THRESHOLD = 0.6;
+/** Smallest reference length for the displacement metric, in CSS pixels. */
+const DRIFT_SCALE_FLOOR = 32;
 
-/** Intersection over union of two page-coordinate boxes: 1 when unmoved, 0 when disjoint. */
-function boxSimilarity(a: readonly number[], b: readonly number[]): number {
+/**
+ * How close a resolved control is to where it was recorded, as centre displacement plus size ratio.
+ *
+ * Deliberately not intersection-over-union, and deliberately position-only. Two reasons, both found
+ * by watching this fire on a page that had not changed at all. A legacy app's buttons are ~37x14px,
+ * and on a box that small a two-pixel rendering difference costs half the overlap. And the recorder
+ * measures the accessible node's box while the resolver measures the element's own, so a padded
+ * control is legitimately "bigger" at replay than at record time without having moved a pixel.
+ * Centre displacement against a floored reference length asks the question we actually care about —
+ * did this control move somewhere else on the screen — and is indifferent to both.
+ */
+export function boxSimilarity(a: readonly number[], b: readonly number[]): number {
   const [ax, ay, aw, ah] = [a[0]!, a[1]!, a[2]!, a[3]!];
   const [bx, by, bw, bh] = [b[0]!, b[1]!, b[2]!, b[3]!];
-  const ix = Math.max(0, Math.min(ax + aw, bx + bw) - Math.max(ax, bx));
-  const iy = Math.max(0, Math.min(ay + ah, by + bh) - Math.max(ay, by));
-  const inter = ix * iy;
-  const union = aw * ah + bw * bh - inter;
-  return union > 0 ? inter / union : 0;
+  const dx = ax + aw / 2 - (bx + bw / 2);
+  const dy = ay + ah / 2 - (by + bh / 2);
+  const scale = Math.max(DRIFT_SCALE_FLOOR, aw, ah);
+  return Math.max(0, 1 - Math.hypot(dx, dy) / scale);
 }
 
 export async function replay(opts: ReplayOptions): Promise<ReplayResult> {
@@ -153,7 +164,7 @@ export async function replay(opts: ReplayOptions): Promise<ReplayResult> {
   };
 
   // ---- failure bundle ----
-  type Bundle = { screenshot?: string; fullPage?: string; a11y?: string; trace?: string; narrative?: string };
+  type Bundle = { screenshot?: string; fullPage?: string; a11y?: string; text?: string; trace?: string; narrative?: string };
   /**
    * Collect what a human needs to debug a failure. Every call is raced against a short budget: the
    * browser may be mid-navigation or already torn down when we get here, and Playwright's own
@@ -183,7 +194,7 @@ export async function replay(opts: ReplayOptions): Promise<ReplayResult> {
       out.a11y = evidence.json(`${label}-a11y.json`, { url: obs.url, frames: obs.frames, landmarks: obs.landmarks, elements: obs.elements, dialog: obs.dialog ?? null });
     }
     const text = await withBudget(3000, () => surface.visibleText());
-    if (text !== undefined) evidence.text(`${label}-text.txt`, text);
+    if (text !== undefined) out.text = evidence.text(`${label}-text.txt`, text);
     return out;
   };
 
@@ -290,7 +301,7 @@ export async function replay(opts: ReplayOptions): Promise<ReplayResult> {
         if (state.sideEffects !== "none") {
           // Distinct from RECOVERY_LOOP: the recovery itself is sound, but replaying the flow from the
           // top would repeat an action that has already been committed downstream. A human must look.
-          state.sideEffects = "possible";
+          // Never narrow the field here: "committed" is strictly more information than "possible".
           await fail("UNSAFE_RESTART", step, "a recoverable condition before any point of no return", `${o.code} after a committed action; restarting the flow could duplicate it`);
         }
         await runSequence(cap.preludes[name] ?? [], "prelude", 0, name);
@@ -444,7 +455,7 @@ export async function replay(opts: ReplayOptions): Promise<ReplayResult> {
           const sim = boxSimilarity(recordedBox, res.resolved.bbox);
           if (sim < VISUAL_DRIFT_THRESHOLD) {
             evidence.event({ type: "visual_drift", stepId: step.id, stepIndex: index, similarity: Number(sim.toFixed(3)), threshold: VISUAL_DRIFT_THRESHOLD });
-            log(`  visual drift: control moved (overlap ${(sim * 100).toFixed(0)}%)`);
+            log(`  visual drift: control moved (position match ${(sim * 100).toFixed(0)}%)`);
           }
         }
         if (res.resolved.candidateIndex > 0) {
@@ -525,8 +536,11 @@ export async function replay(opts: ReplayOptions): Promise<ReplayResult> {
   try {
     for (const c of opts.cookies ?? []) await surface.setCookie(c.url, c.name, c.value);
     const startIndex = opts.startAtStepIndex ?? 0;
-    const firstStep = Object.values(cap.preludes)[0]?.[0] ?? cap.steps[0];
-    if (startIndex === 0 && firstStep?.action !== "navigate") await surface.open(cap.policy.allowedOrigins[0]!);
+    // Whatever we are about to run first must have a page to run against. A resume skips the
+    // preludes, so without this the first precondition check ran with no browser at all and failed
+    // as an engine crash instead of as a wrong screen.
+    const firstStep = startIndex === 0 ? (Object.values(cap.preludes)[0]?.[0] ?? cap.steps[0]) : cap.steps[startIndex];
+    if (firstStep?.action !== "navigate") await surface.open(cap.policy.allowedOrigins[0]!);
     if (startIndex === 0) {
       for (const pre of cap.preconditions) {
         const name = pre.via.slice("prelude:".length);

@@ -1,0 +1,39 @@
+[2m$ tsx apps/cli/src/main.ts replay artifacts/member-savings-balance@2.json --plan[22m
+Look up member {memberId} and read the current balance of their Savings account. [member-savings-balance@2, draft]
+inputs: memberId:string   outputs: savingsBalance:money
+secrets: TARGET_PASSWORD, TARGET_USER   origins: http://localhost:4100
+prelude login:
+  login.1 navigate  "http://localhost:4100/"  [retryable]
+      intent: Open the application
+      expect: landmarkVisible text "Legacy CU Core — Sign In"
+  login.2 type textbox "User Name" <secret TARGET_USER>  [retryable]
+      intent: Enter username
+      precondition: url ^/login(\?.*)?$; 2 of [text "Legacy CU Core — Sign In", cell "Operator Sign In", cell "User Name", textbox "User Name", textbox "Password"]
+      expect: valueEquals
+      fallbacks: label → css → visual
+  login.3 type textbox "Password" <secret TARGET_PASSWORD>  [retryable]
+      intent: Enter password to proceed with login
+      precondition: url ^/login(\?.*)?$; 2 of [text "Legacy CU Core — Sign In", cell "Operator Sign In", cell "User Name", textbox "User Name", textbox "Password"]
+      expect: valueEquals
+      fallbacks: label → css → visual
+  login.4 click button "Sign In"   [single-attempt]
+      intent: Submit login form
+      precondition: url ^/login(\?.*)?$; 2 of [text "Legacy CU Core — Sign In", cell "Operator Sign In", cell "User Name", textbox "User Name", textbox "Password"]
+      expect: urlMatches ^/search(\?.*)?$; landmarkVisible text "Member Search"
+      fallbacks: text → css → visual
+steps:
+  1. type textbox "Member ID" {memberId}  [retryable]
+      intent: Enter the member ID to search
+      precondition: url ^/search(\?.*)?$; 2 of [text "Legacy CU Core — Member Search", cell "Member Search", textbox "Member ID", link "Clear"]
+      expect: valueEquals
+      fallbacks: label → css → visual
+  2. click button "Search"   [single-attempt]
+      intent: Search for member {memberId}
+      precondition: url ^/search(\?.*)?$; 2 of [text "Legacy CU Core — Member Search", cell "Member Search", textbox "Member ID", link "Clear"]
+      expect: urlMatches ^/member/[^/?&]+(\?.*)?$; landmarkVisible text "Legacy CU Core — Member Detail"
+      fallbacks: text → css → visual
+  3. extract table td   [retryable]
+      intent: Using row label "Savings" (type) and column header "Current Balance" to deterministically re-read this value across members.
+      precondition: url ^/member/[^/?&]+(\?.*)?$; 2 of [text "Legacy CU Core — Member Detail", cell "Member Detail", link "Open New Sub-Account", link "Back to Search"]
+checkpoint: landmarkVisible text "Legacy CU Core — Member Detail"; textVisible {memberId}
+outcomes: MEMBER_NOT_FOUND(business), INVALID_MEMBER_ID(business), VALIDATION_ERROR(business), PERMISSION_DENIED(business), SESSION_EXPIRED(recoverable→prelude:login), MAINTENANCE_NOTICE(recoverable→dismissDialog), SERVER_ERROR(recoverable→reload), UNKNOWN_DIALOG(failure,escalate)

@@ -3,7 +3,9 @@
  * NBSPs and inconsistent casing; comparisons must not be.
  */
 export function normalizeText(s: string): string {
-  return s.normalize("NFC").replace(/ /g, " ").replace(/\s+/g, " ").trim();
+  // NBSP and friends are written as escapes on purpose: a literal one here is invisible in a
+  // diff and indistinguishable from the ordinary space two characters later.
+  return s.normalize("NFC").replace(/[\u00a0\u2007\u202f]/g, " ").replace(/\s+/g, " ").trim();
 }
 
 /** Build a RegExp from a pattern and optional flags; case-insensitive by default unless flags are given. */

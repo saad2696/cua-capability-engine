@@ -218,6 +218,55 @@ advice accordingly — "safe to retry" becomes "a human must check the account f
   by changing one parameter. The suite asserts both, and asserts that the parameter value appears
   nowhere in the artifact or the event log.
 
+### A signal that fired on a page that had not changed
+
+The visual-drift check is worth a paragraph because the first version of it was useless in an
+instructive way. It began as intersection-over-union between the recorded bounding box and the
+resolved one — the obvious metric. It then reported drift on *every* control on *every* run of a page
+that was pixel-identical to the recording.
+
+Two causes, both specific to the domain. A legacy app's buttons are about 37x14 pixels, and on a box
+that small a two-pixel rendering difference costs half the overlap. And the recorder measures the
+accessible node's box while the resolver measures the element's own, so a padded control is
+legitimately larger at replay than at record time without having moved at all.
+
+The fix was to stop measuring overlap and measure centre displacement against a floored reference
+length, discarding size entirely. A monitoring signal that fires constantly is worse than no signal,
+because it trains the reader to ignore it — and this one would have been *indistinguishable from
+working* in a demo, since drift never fails a run. It is only visible if you look at a passing run
+and ask why it is reporting anything at all.
+
+### Two things the tests found that review did not
+
+Writing a test for a branch the happy path cannot reach is how both of these surfaced, and both are
+the kind of defect that stays invisible until the day it matters.
+
+`UNSAFE_RESTART` was setting `sideEffects` to `possible` on its way out — narrowing a run that had
+already *confirmed* a committed action down to "we're not sure". It is the one field the failure
+narrative uses to decide between "safe to retry" and "a human must check the account first", so
+weakening it there was precisely backwards. G1 is read-only and can never reach this branch, so the
+test that caught it runs against a fixture that marks the search as a point of no return.
+
+`--resume-from` never opened a browser. The start-up path only opened the page when the run began at
+step zero, because until then every run did. A resume therefore ran its first precondition check
+against no page at all and died with a `TypeError` reported as `SURFACE_ERROR` — a hard failure that
+told the operator nothing. It now opens the origin either way, so a resume into a session that no
+longer exists reports `WRONG_SCREEN`, and the declared session recovery re-authenticates on demand
+before the run continues.
+
+### What actually ran
+
+`evidence/` holds eight real replay runs against the mock app, indexed in `evidence/README.md`: all
+four statuses, every recovery path, and both exit codes for the identical underlying condition
+(`RECOVERY_LOOP` at exit 2, and the same condition escalated to a human at exit 3, differing only in
+what the caller asked for). None of them involved a model.
+
+One known rough edge, carried into slice 007: a business outcome currently takes about twenty
+seconds, because the step's full assertion window expires before the detectors are consulted. The
+answer is correct and the exit code is right, but the shape is wrong — the screen already said "No
+member found" in the first second. Racing detection against the first failed assertion is the fix,
+and it changes step semantics enough that it belongs with the session controller rather than here.
+
 ## 4. Heterogeneity & multi-tenant
 
 _Filled in with slices 006/013. Design intent in `openspec/changes/013-cross-tenant-variant/`._
@@ -225,6 +274,17 @@ _Filled in with slices 006/013. Design intent in `openspec/changes/013-cross-ten
 Foundations laid: the `Surface` interface and an `Observation` built from accessibility
 semantics rather than markup; locator strategies that are surface-neutral except `css`;
 `app.variant` on the artifact and a documented overlay format keyed by step id.
+
+One honest caveat on surface-neutrality, found while getting replay green. The recorder emits page
+headers as landmarks with `role: "text"`, and `text` is not an ARIA role — the first replay silently
+failed every one of those assertions, which is what made the login prelude look like it was expiring
+its own session. Rather than drop the landmark (page headers are the most stable screen
+discriminator a legacy app offers) the contract now *defines* `text` as a pseudo-role meaning "a
+visible text node, matched by content", documented in `docs/artifact-schema.md`. It is honourable on
+any surface, including desktop accessibility APIs where static text is likewise a first-class node
+without an interactive role. The Playwright surface implements it with a text match instead of a role
+match. That is a surface implementation detail, not a leak into the contract — but it was worth
+writing down rather than leaving as undocumented behaviour that happens to work.
 
 ## 5. Escalation & handoff
 

@@ -1,0 +1,18 @@
+{
+  "status": "business_outcome",
+  "code": "MEMBER_NOT_FOUND",
+  "message": "No member exists with this member ID.",
+  "atStep": "step:click-button-search",
+  "outputs": {},
+  "runId": "replay-2026-09-11160-a2e3bf",
+  "capabilityId": "member-savings-balance",
+  "capabilityVersion": 2,
+  "startedAt": "2026-09-11T16:05:17.819Z",
+  "finishedAt": "2026-09-11T16:05:38.065Z",
+  "durationMs": 20246,
+  "stepsRun": 5,
+  "sideEffects": "none",
+  "drift": [],
+  "recoveries": [],
+  "evidenceDir": "evidence/replay-g1-member-not-found"
+}

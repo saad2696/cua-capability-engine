@@ -9,7 +9,7 @@ import { EvidenceWriter } from "../evidence/EvidenceWriter.js";
 import { Redactor } from "../evidence/redactor.js";
 import { basicPolicy } from "../policy/basic.js";
 import { PlaywrightSurface } from "../surface/playwright/PlaywrightSurface.js";
-import { replay, type ReplayOptions } from "./executor.js";
+import { VISUAL_DRIFT_THRESHOLD, boxSimilarity, replay, type ReplayOptions } from "./executor.js";
 import { parseMoney } from "./text.js";
 
 let server: Server;
@@ -149,8 +149,16 @@ describe("hard failures are debuggable", () => {
     if (result.status === "failure") {
       expect(result.observed).toContain("System maintenance");
       expect(result.evidence.narrative).toBeTruthy();
-      expect(readFileSync(result.evidence.narrative!, "utf8")).toContain("Suggested next action");
-      expect(existsSync(join(evidence.dir, result.evidence.screenshot!))).toBe(true);
+      // Every path in the bundle is relative to the run directory, so the evidence stays valid
+      // wherever the directory is moved or shared.
+      expect(result.evidence.narrative).not.toMatch(/^\//);
+      expect(readFileSync(join(evidence.dir, result.evidence.narrative!), "utf8")).toContain("Suggested next action");
+      // Whatever the bundle managed to collect must actually be there. It is best-effort by design:
+      // an open dialog blocks screenshots, and a torn-down page blocks everything, so the bundle
+      // records what it got rather than failing the failure.
+      const collected = [result.evidence.screenshot, result.evidence.fullPage, result.evidence.a11y, result.evidence.text].filter((r): r is string => Boolean(r));
+      expect(collected.length).toBeGreaterThan(0);
+      for (const rel of collected) expect(existsSync(join(evidence.dir, rel))).toBe(true);
     }
   }, 60_000);
   it("WRONG_SCREEN when a precondition does not hold", async () => {
@@ -189,6 +197,28 @@ describe("drift and side effects", () => {
     const b = await run(approved, { memberId: "10042" }, { allowDraft: false });
     expect(b.result).toMatchObject({ status: "failure", code: "CHECKPOINT_FAILED", sideEffects: "possible" });
   }, 90_000);
+  it("UNSAFE_RESTART: a recoverable condition after a point of no return is not replayed", async () => {
+    // G1 is read-only, so this is the one branch the real artifact cannot reach. Mark the search as
+    // a committed action, then make the next step fail into a recovery that wants to restart the
+    // flow. Restarting would re-run the committed step, so the run must stop instead.
+    const art = fixture((c) => {
+      c.steps[1]!.risk = "risky";
+      c.steps[1]!.pointOfNoReturn = true;
+      c.capability.status = "approved";
+      c.provenance.approvedBy = "test";
+      c.provenance.approvedAt = "2026-09-11T00:00:00Z";
+      // Extraction fails, so the executor asks the screen to explain itself...
+      c.outputs["savingsBalance"]!.extract.candidates = [{ strategy: "tableCell", rowMatch: "Brokerage", columnHeader: "Current Balance", frame: ["main"] }];
+      // ...and this outcome answers "your session is stale, log in again and start over".
+      c.outcomes = [{ code: "STALE_VIEW", kind: "recoverable", message: "The view is stale; re-authenticating.", detect: [{ kind: "textMatches", pattern: "Member Detail" }], appliesTo: "any", recover: "prelude:login", maxRecoveries: 2, escalate: false }, ...c.outcomes];
+    });
+    const { result } = await run(art, { memberId: "10042" }, { allowDraft: false });
+    expect(result).toMatchObject({ status: "failure", code: "UNSAFE_RESTART", atStep: "step:extract-savingsbalance" });
+    // The strictly more informative value survives: the click was confirmed, not merely attempted.
+    expect(result.sideEffects).toBe("committed");
+    if (result.status === "failure") expect(result.observed).toContain("could duplicate");
+  }, 90_000);
+
   it("humanConfirm mode asks the hook and proceeds when approved", async () => {
     const risky = fixture((c) => { c.steps[1]!.risk = "risky"; });
     let asked = 0;
@@ -226,5 +256,51 @@ describe("parsers", () => {
     expect(parseMoney("-$12.00")).toEqual({ amount: -12, currency: "USD" });
     expect(parseMoney("(45.10)")).toEqual({ amount: -45.1, currency: "USD" });
     expect(parseMoney("n/a")).toBeNull();
+  });
+});
+
+describe("partial runs", () => {
+  it("startAtStepIndex skips the preludes and the earlier steps entirely", async () => {
+    // The flag's contract is what it does *not* replay: the steps before the resume point. Anything
+    // needed to make the run legal is still established on demand, which is why the login prelude
+    // reappears here — a fresh process has no session, so the precondition check finds the sign-in
+    // screen and the declared recovery re-authenticates before the run continues.
+    const { result, events } = await run(fixture(), { memberId: "10042" }, { startAtStepIndex: 2, runTimeoutMs: 45_000 });
+    expect(events).not.toContain("step:type-textbox-member-id");
+    expect(events).not.toContain("step:click-button-search");
+    expect(events).toContain("step:open-app"); // the prelude is re-established, not skipped
+    // Resuming into a session that was never opened cannot find the member detail screen, and says
+    // so as a wrong screen rather than as an engine crash.
+    expect(result.status).toBe("failure");
+    if (result.status === "failure") expect(result.code).toBe("WRONG_SCREEN");
+  }, 90_000);
+});
+
+describe("visual drift metric", () => {
+  const drifted = (a: number[], b: number[]) => boxSimilarity(a, b) < VISUAL_DRIFT_THRESHOLD;
+  // A ~37x14 button is what a legacy app actually renders; the metric must survive that scale.
+  const button = [486, 121, 37, 14];
+
+  it("does not fire on an unchanged control", () => {
+    expect(drifted(button, button)).toBe(false);
+  });
+  it("does not fire on sub-pixel rendering differences", () => {
+    expect(drifted(button, [487, 122, 38, 14])).toBe(false);
+  });
+  it("does not fire when the resolver measures a padded box around the same centre", () => {
+    // The recorder measures the accessible node; the resolver measures the element. Same place,
+    // twice the area — which is why the metric ignores size entirely.
+    expect(drifted(button, [479, 114, 51, 28])).toBe(false);
+  });
+  it("fires when the control moves to another part of the screen", () => {
+    expect(drifted(button, [486, 340, 37, 14])).toBe(true);
+    expect(drifted(button, [120, 121, 37, 14])).toBe(true);
+  });
+  it("is symmetric in magnitude and bounded to [0,1]", () => {
+    for (const b of [button, [487, 122, 38, 14], [486, 340, 37, 14], [0, 0, 1, 1]]) {
+      const v = boxSimilarity(button, b);
+      expect(v).toBeGreaterThanOrEqual(0);
+      expect(v).toBeLessThanOrEqual(1);
+    }
   });
 });
