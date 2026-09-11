@@ -6,7 +6,7 @@
  * stopped at, the browser is never restarted, and the value the flow finally extracts is the one a
  * human's own clicks made reachable.
  */
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import type { Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -58,7 +58,6 @@ const get = (p: string) => fetch(url(p));
 
 /** The recorded artifact, re-pointed at this test's target-app port. */
 async function artifact(mutate?: (c: Record<string, unknown>) => void) {
-  const { readFileSync } = await import("node:fs");
   const c = JSON.parse(readFileSync(artifactPath, "utf8").split("http://localhost:4100").join(base)) as Record<string, unknown>;
   mutate?.(c);
   return c;
@@ -74,7 +73,7 @@ async function until<T>(fn: () => Promise<T | undefined>, timeoutMs = 45_000): P
   }
 }
 
-const runOf = async (id: string) => (await get(`/api/runs/${id}`)).json() as Promise<{ status: string; session: { state: string; interventions: { id: string; status: string; detail: string; kind: string }[] }; result?: { status: string; outputs?: Record<string, unknown>; stepsRun: number; recoveries: { code: string }[] } }>;
+const runOf = async (id: string) => (await get(`/api/runs/${id}`)).json() as Promise<{ status: string; finishedAt?: string; session: { state: string; interventions: { id: string; status: string; detail: string; kind: string }[] }; result?: { status: string; outputs?: Record<string, unknown>; stepsRun: number; recoveries: { code: string }[] } }>;
 
 describe("the API alone is enough to drive a run", () => {
   it("lists artifacts and rejects a malformed one before starting anything", async () => {
@@ -192,7 +191,12 @@ describe("a human takes control of the same live session", () => {
     if (pause.status === 201) {
       const iv = await pause.json() as { id: string; kind: string };
       expect(iv.kind).toBe("manual_pause");
-      expect((await runOf(started.id)).session.state).toBe("paused");
+      // A pause takes effect at the next between-steps check, so the state follows shortly after the
+      // request rather than with it — and a run this short may simply finish first.
+      await until(async () => {
+        const r = await runOf(started.id);
+        return r.session.state === "paused" || r.finishedAt ? r : undefined;
+      }, 20_000);
       const resolved = await post(`/api/interventions/${iv.id}/resolve`, { resumeAt: "same", by: "tester" });
       expect(resolved.status).toBe(200);
     }
@@ -299,6 +303,7 @@ describe("discovery runs under the same session control", () => {
 describe("nothing a run touches leaks the values it was given", () => {
   it("no parameter or secret appears in any file a handover writes", async () => {
     const { readdirSync, readFileSync: read, statSync } = await import("node:fs");
+
     const art = await artifact((c) => { (c["steps"] as { risk: string }[])[1]!.risk = "risky"; });
     const started = await (await post("/api/replay", { artifact: art, params: { memberId: "10042" } })).json() as { id: string; evidenceDir: string };
     const iv = await until(async () => (await runOf(started.id)).session.interventions.find((i) => i.status === "open"));
@@ -319,4 +324,54 @@ describe("nothing a run touches leaks the values it was given", () => {
       expect(text, `${f} leaked the password`).not.toContain("demo");
     }
   }, 120_000);
+});
+
+describe("an error the engine cannot handle becomes a handover", () => {
+  it("escalates an undeclared dialog, lets a person clear it, and finishes the run", async () => {
+    // The demonstration the console's "break something" panel exists for. An undeclared dialog is
+    // the one fault in the list the engine is not supposed to recover from: it stops, says exactly
+    // what it saw, and asks for a person. A one-shot fault, so clearing it is enough to continue.
+    const started = await (await post("/api/replay", { artifact: await artifact(), params: { memberId: "10042" }, pauseAtStart: true })).json() as { id: string };
+    const first = await until(async () => (await runOf(started.id)).session.interventions.find((i) => i.status === "open"));
+    await post(`/api/runs/${started.id}/scenario`, { fault: "blocking_dialog" });
+    await post(`/api/interventions/${first.id}/resolve`, { resumeAt: "same", by: "tester" });
+
+    const escalation = await until(async () => (await runOf(started.id)).session.interventions.find((i) => i.status === "open" && i.kind === "replay_failure"));
+    expect(escalation.reason).toBe("OUTCOME_ESCALATE");
+    expect(escalation.detail).toContain("UNKNOWN_DIALOG");
+    expect(escalation.detail).toContain("ERR-7731");
+
+    // Nothing dismisses the dialog on the engine's behalf. It is still open, and it is the operator
+    // who answers it — over the same websocket the console uses.
+    const ws = new WebSocket(`ws://127.0.0.1:${api.port}/ws/runs/${started.id}/live`);
+    const seen: Record<string, unknown>[] = [];
+    ws.on("message", (d) => seen.push(JSON.parse(String(d)) as Record<string, unknown>));
+    await new Promise<void>((r) => ws.once("open", () => r()));
+    ws.send(JSON.stringify({ type: "claim", interventionId: escalation.id, by: "tester" }));
+    await until(async () => seen.find((m) => m["type"] === "claimed"));
+
+    const frame = await until(async () => seen.find((m) => m["type"] === "frame" && m["dialog"])) as { dialog: { message: string } };
+    expect(frame.dialog.message).toContain("ERR-7731");
+
+    ws.send(JSON.stringify({ type: "dialog", accept: true }));
+    await until(async () => seen.find((m) => m["type"] === "ack"));
+    ws.send(JSON.stringify({ type: "resolve", interventionId: escalation.id, resumeAt: "same", by: "tester" }));
+    await until(async () => seen.find((m) => m["type"] === "resolved"));
+    ws.close();
+
+    const done = await until(async () => {
+      const r = await runOf(started.id);
+      return r.status === "completed" || r.status === "failed" ? r : undefined;
+    });
+    expect(done.status).toBe("completed");
+    expect(done.result?.outputs?.["savingsBalance"]).toEqual({ amount: 1234.56, currency: "USD" });
+
+    // What the operator did is on the record, in the same vocabulary as the engine's own actions.
+    const events = readFileSync(join(evidenceRoot, started.id, "events.jsonl"), "utf8");
+    expect(events).toContain('"type":"human_action"');
+    expect(events).toContain("dialog accept");
+    // One hand-back per decision: the pause, then this escalation. The engine used to log a second,
+    // identical resume for the same answer.
+    expect(events.split('"resumeAt":"same"').length - 1).toBe(2);
+  }, 150_000);
 });

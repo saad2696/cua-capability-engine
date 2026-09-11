@@ -24,6 +24,8 @@ export interface FrameMessage {
   type: "frame";
   seq: number;
   url: string;
+  /** Who was driving when the frame was taken, so the console can label it without guessing. */
+  controller?: string;
   viewport: { width: number; height: number };
   dialog?: { type: string; message: string };
   /** base64 PNG. */
@@ -31,29 +33,45 @@ export interface FrameMessage {
 }
 
 /**
- * Frames are only worth sending when somebody is looking at a stopped run. While the engine is
- * driving, a stream would contend with its own observe() calls for the same CDP connection and show
- * a blur nobody is acting on.
+ * Whether a frame is worth capturing right now, and how often.
+ *
+ * Watching the automation work is most of what makes the system legible to a person, so frames flow
+ * whenever somebody is attached — including while the engine drives. The rate differs because the
+ * purposes differ: an operator who has taken control needs their own clicks to feel immediate,
+ * while an observer watching the engine needs only to follow along, and a slower cadence there
+ * leaves the browser's connection free for the work itself.
  */
 export function shouldStream(session: Session): boolean {
-  return session.state === "paused" || session.state === "human_control";
+  return session.state !== "idle" && session.state !== "completed" && session.state !== "aborted";
+}
+
+export function frameIntervalMs(session: Session): number {
+  return session.state === "human_control" ? 300 : session.state === "paused" ? 500 : 450;
 }
 
 export class FrameStreamer {
   private timer: NodeJS.Timeout | undefined;
   private seq = 0;
   private busy = false;
+  private interval = 0;
 
   constructor(
     private readonly surface: Surface,
     private readonly session: Session,
     private readonly send: (f: FrameMessage) => void,
-    private readonly intervalMs = 400,
   ) {}
 
   start(): void {
-    if (this.timer) return;
-    this.timer = setInterval(() => void this.tick(), this.intervalMs);
+    this.schedule();
+  }
+
+  /** Re-armed on every tick, because the right cadence depends on who is driving. */
+  private schedule(): void {
+    const want = frameIntervalMs(this.session);
+    if (this.timer && this.interval === want) return;
+    clearInterval(this.timer);
+    this.interval = want;
+    this.timer = setInterval(() => void this.tick(), want);
     this.timer.unref?.();
   }
 
@@ -65,6 +83,7 @@ export class FrameStreamer {
   private async tick(): Promise<void> {
     // One capture in flight at a time: a slow frame must not queue up behind itself and starve the
     // operator's own input, which shares the same connection to the browser.
+    this.schedule();
     if (this.busy || !shouldStream(this.session)) return;
     this.busy = true;
     try {
@@ -75,6 +94,7 @@ export class FrameStreamer {
       this.send({
         type: "frame", seq: this.seq, url: this.surface.frameUrl() ?? "",
         viewport: { width: 1280, height: 800 },
+        controller: this.session.controller,
         ...(dialog ? { dialog: { type: dialog.type, message: dialog.message } } : {}),
         png: png.toString("base64"),
       });

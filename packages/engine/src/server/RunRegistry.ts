@@ -62,6 +62,14 @@ export interface StartReplayInput {
   riskyStepsRequire?: "approvedArtifact" | "humanConfirm" | "block";
   runTimeoutMs?: number;
   interventionTimeoutMs?: number;
+  /**
+   * Raise an intervention before the first step runs. A read-only replay finishes in about two
+   * seconds, which is faster than anybody can click "pause", so without this the takeover path is
+   * only reachable by luck. It is also the cautious way to run a capability for the first time.
+   */
+  pauseAtStart?: boolean;
+  /** Pace the run so it can be watched. Purely presentational; see ReplayOptions.stepDelayMs. */
+  stepDelayMs?: number;
 }
 
 export interface StartDiscoveryInput {
@@ -151,6 +159,14 @@ export class RunRegistry {
 
     const engineSurface = session.start();
     this.changed(record);
+    if (input.pauseAtStart) {
+      // Open the application before stopping. A capability whose first step is a navigation has no
+      // page yet at this point, so pausing without this leaves the operator looking at an empty
+      // viewport and wondering what broke. The flow's own first step navigates to the same origin.
+      await engineSurface.open(origins[0]!).catch(() => {});
+      // Raised before the loop starts, so the engine blocks on its first shouldContinue check.
+      await session.pause("operator");
+    }
 
     const cookies = input.fault
       ? [{ url: origins[0]!, name: "cu_fault", value: input.fault.name }, ...(input.fault.sticky ? [{ url: origins[0]!, name: "cu_fault_sticky", value: "1" }] : [])]
@@ -166,6 +182,7 @@ export class RunRegistry {
           escalateOnFailure: input.escalateOnFailure ?? true,
           riskyStepsRequire: input.riskyStepsRequire ?? "humanConfirm",
           ...(input.runTimeoutMs ? { runTimeoutMs: input.runTimeoutMs } : {}),
+          ...(input.stepDelayMs ? { stepDelayMs: input.stepDelayMs } : {}),
           cookies,
           onEscalate: session.onEscalate,
           shouldContinue: session.shouldContinue,

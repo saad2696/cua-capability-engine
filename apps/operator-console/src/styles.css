@@ -1,3 +1,221 @@
-:root { color-scheme: light dark; font-family: system-ui, sans-serif; }
-body { margin: 0; }
-.shell { padding: 2rem; max-width: 960px; margin: 0 auto; }
+/*
+ * One stylesheet. The console is four pages and a viewport; a component library would be more
+ * machinery than the problem has, and hand-written CSS keeps the whole visual language readable
+ * in one file.
+ *
+ * The palette carries meaning rather than decoration. Controller colour is the same everywhere it
+ * appears — green for the engine, amber for a human, grey for nobody — because the one thing an
+ * operator must never misread is who is driving.
+ */
+:root {
+  color-scheme: light dark;
+  --bg: #0f1115;
+  --panel: #171a21;
+  --panel-2: #1e222b;
+  --line: #2a2f3a;
+  --text: #e6e8ee;
+  --muted: #8f97a8;
+  --accent: #5b9cff;
+  --replay: #3ecf8e;
+  --human: #ffb454;
+  --bad: #ff6b6b;
+  --warn: #ffd166;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 15px;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); }
+code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.86em; background: #0000003d; padding: 0.1em 0.35em; border-radius: 4px; }
+.muted { color: var(--muted); font-weight: 400; }
+h2 { font-size: 1.25rem; margin: 0 0 0.25rem; }
+h3 { font-size: 0.95rem; margin: 0 0 0.4rem; letter-spacing: 0.02em; text-transform: uppercase; color: var(--muted); }
+h4 { font-size: 0.9rem; margin: 0.6rem 0 0.2rem; }
+p { margin: 0.35rem 0; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* ---- shell ---- */
+.app { min-height: 100vh; display: flex; flex-direction: column; }
+.app__head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.7rem 1.2rem; border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 10; }
+.app__brand { display: flex; align-items: center; gap: 0.6rem; }
+.app__brand div { display: flex; flex-direction: column; line-height: 1.15; }
+.app__brand span.muted { font-size: 0.78rem; }
+.app__mark { width: 18px; height: 18px; border-radius: 5px; background: linear-gradient(140deg, var(--replay), var(--accent)); }
+.app__head nav { display: flex; gap: 0.2rem; }
+.nav { padding: 0.35rem 0.7rem; border-radius: 6px; color: var(--muted); display: inline-flex; align-items: center; gap: 0.4rem; }
+.nav:hover { background: var(--panel-2); text-decoration: none; }
+.nav--on { background: var(--panel-2); color: var(--text); }
+.count { background: var(--human); color: #1a1206; border-radius: 999px; padding: 0 0.4em; font-size: 0.75rem; font-weight: 700; }
+.app__body { flex: 1; padding: 1.2rem; max-width: 1500px; width: 100%; margin: 0 auto; }
+
+.banner { padding: 0.6rem 1.2rem; display: flex; gap: 0.8rem; align-items: center; }
+.banner--bad { background: #3a1d1d; color: #ffd9d9; }
+.banner--warn { background: #3a3320; color: var(--warn); }
+
+/* ---- controls ---- */
+button, select, input { font: inherit; color: inherit; }
+button { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 0.4rem 0.8rem; cursor: pointer; }
+button:hover:not(:disabled) { border-color: var(--muted); }
+button:disabled { opacity: 0.4; cursor: not-allowed; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #06142e; font-weight: 600; }
+button.danger { color: var(--bad); }
+button.big { padding: 0.6rem 1.4rem; font-size: 1rem; }
+button.link { background: none; border: none; padding: 0.1rem 0.2rem; color: var(--accent); }
+button.link--on { color: var(--text); font-weight: 600; }
+select, input { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 0.4rem 0.6rem; }
+label { display: flex; flex-direction: column; gap: 0.25rem; margin-bottom: 0.8rem; }
+label small { margin-top: 0.1rem; }
+fieldset { border: 1px solid var(--line); border-radius: 8px; padding: 0.8rem; margin: 0 0 0.9rem; }
+legend { color: var(--muted); font-size: 0.8rem; padding: 0 0.4rem; }
+
+.pill { display: inline-block; padding: 0.1rem 0.5rem; border-radius: 999px; font-size: 0.78rem; border: 1px solid var(--line); background: var(--panel-2); }
+.pill--running, .pill--resuming { border-color: var(--accent); color: var(--accent); }
+.pill--paused, .pill--claimed { border-color: var(--human); color: var(--human); }
+.pill--human_control { border-color: var(--human); color: #1a1206; background: var(--human); }
+.pill--completed, .pill--success, .pill--approved, .pill--business, .pill--business_outcome, .pill--recovered { border-color: var(--replay); color: var(--replay); }
+.pill--failed, .pill--failure, .pill--expired, .pill--danger { border-color: var(--bad); color: var(--bad); }
+.pill--warn, .pill--recoverable, .pill--draft, .pill--escalated, .pill--needsReview { border-color: var(--warn); color: var(--warn); }
+.chip { border-radius: 999px; padding: 0.12rem 0.6rem; font-size: 0.78rem; color: var(--muted); }
+.chip--on { color: var(--text); border-color: var(--muted); }
+
+/* ---- entry gate ---- */
+.gate { max-width: 720px; margin: 1.5rem auto; }
+.gate__head { margin-bottom: 1.2rem; }
+.gate__modes { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; margin-bottom: 1.2rem; }
+.tab { display: flex; flex-direction: column; align-items: flex-start; gap: 0.2rem; padding: 0.7rem 0.9rem; text-align: left; }
+.tab small { color: var(--muted); }
+.tab--on { border-color: var(--accent); background: #16233a; }
+.gate__form { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 1.1rem; }
+.gate__params label { margin-bottom: 0.5rem; }
+
+/* ---- live session ---- */
+.live { display: flex; flex-direction: column; gap: 0.9rem; }
+.controlbar { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 0.7rem 0.9rem; }
+.controlbar__id { display: flex; flex-direction: column; line-height: 1.2; }
+.controlbar__id .muted { font-size: 0.8rem; }
+.controlbar__state { display: flex; gap: 0.35rem; flex-wrap: wrap; }
+.controlbar__actions { margin-left: auto; display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap; }
+.controlbar__hint { flex-basis: 100%; margin: 0; font-size: 0.82rem; }
+
+.ask { background: #3a3320; border: 1px solid var(--warn); border-radius: 10px; padding: 0.8rem 1rem; display: flex; justify-content: space-between; gap: 1rem; align-items: center; }
+
+.live__body { display: grid; grid-template-columns: minmax(0, 1fr) 288px; gap: 0.9rem; align-items: start; }
+.live__main { display: flex; flex-direction: column; gap: 0.9rem; min-width: 0; }
+.live__side { display: flex; flex-direction: column; gap: 0.9rem; }
+@media (max-width: 1100px) { .live__body { grid-template-columns: 1fr; } }
+
+section { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 0.8rem 0.9rem; }
+section header { display: flex; justify-content: space-between; align-items: baseline; gap: 0.8rem; flex-wrap: wrap; }
+
+/* The viewport border is the answer to "who is driving". Nothing else uses these colours. */
+.viewport { border: 2px solid var(--line); border-radius: 10px; background: var(--panel); overflow: hidden; }
+.viewport--replay { border-color: var(--replay); }
+.viewport--agent { border-color: var(--accent); }
+.viewport--human { border-color: var(--human); box-shadow: 0 0 0 4px #ffb4541f; }
+.viewport__bar { display: flex; gap: 0.7rem; align-items: center; padding: 0.45rem 0.7rem; background: var(--panel-2); border-bottom: 1px solid var(--line); font-size: 0.82rem; }
+.viewport__url { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.badge { padding: 0.1rem 0.5rem; border-radius: 999px; font-size: 0.75rem; font-weight: 600; background: var(--line); }
+.badge--replay { background: var(--replay); color: #04231a; }
+.badge--agent { background: var(--accent); color: #06142e; }
+.badge--human { background: var(--human); color: #1a1206; }
+.viewport__stage { min-height: 260px; display: flex; align-items: center; justify-content: center; background: #0b0d11; }
+.viewport__stage--live { outline: none; cursor: crosshair; }
+.viewport__stage img { display: block; width: 100%; height: auto; }
+.viewport__empty { padding: 2.5rem 1.5rem; max-width: 46ch; text-align: center; }
+.hint { padding: 0.4rem 0.7rem; margin: 0; font-size: 0.82rem; color: #1a1206; background: var(--human); }
+.dialogbanner { background: var(--warn); color: #241c00; padding: 0.5rem 0.7rem; display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap; }
+.dialogbanner__actions { display: flex; gap: 0.35rem; margin-left: auto; }
+.dialogbanner button { background: #241c00; color: var(--warn); border-color: #241c00; }
+
+/* ---- activity ---- */
+.eventlog__filters { display: flex; gap: 0.2rem; flex-wrap: wrap; }
+.eventlog__list { list-style: none; margin: 0.5rem 0 0; padding: 0; max-height: 340px; overflow-y: auto; font-size: 0.86rem; }
+.ev { display: grid; grid-template-columns: 2.2rem 7rem 1fr; gap: 0.5rem; padding: 0.22rem 0; border-top: 1px solid #ffffff0a; }
+.ev__seq { color: var(--muted); text-align: right; }
+.ev__type { color: var(--muted); font-family: ui-monospace, monospace; font-size: 0.78rem; }
+.ev--act .ev__type { color: var(--accent); }
+.ev--verify .ev__type { color: var(--replay); }
+.ev--control .ev__type { color: var(--human); }
+.ev--recover .ev__type { color: var(--warn); }
+.ev--run .ev__type { color: var(--text); }
+.redacted { margin-left: 0.4rem; font-size: 0.72rem; padding: 0 0.35em; border-radius: 3px; background: #2a2f3a; color: var(--muted); }
+
+.steps__list, .building__steps { list-style: none; margin: 0.5rem 0 0; padding: 0; font-size: 0.9rem; }
+.step { display: grid; grid-template-columns: 1.4rem 1fr; gap: 0.5rem; padding: 0.25rem 0; border-top: 1px solid #ffffff0a; }
+.step__notes { grid-column: 2; color: var(--muted); font-size: 0.82rem; }
+.step__icon { text-align: center; }
+.step--passed .step__icon { color: var(--replay); }
+.step--failed .step__icon { color: var(--bad); }
+.step--recovered .step__icon { color: var(--warn); }
+.step--running .step__icon { color: var(--accent); }
+
+.building__steps li { display: flex; gap: 0.6rem; padding: 0.25rem 0; border-top: 1px solid #ffffff0a; }
+.building__n { color: var(--muted); min-width: 1.4rem; }
+.ref { color: var(--human); background: #ffb4541a; }
+.literal { color: var(--text); }
+.building__outputs ul { margin: 0.2rem 0 0; padding-left: 1.1rem; }
+
+.scenarios__list { list-style: none; margin: 0.6rem 0; padding: 0; display: flex; flex-direction: column; gap: 0.45rem; font-size: 0.85rem; }
+.scenarios__list li { display: grid; grid-template-columns: 1fr auto; gap: 0.2rem 0.5rem; align-items: center; }
+.scenarios__list li .muted { grid-column: 1 / -1; font-size: 0.78rem; }
+.scenarios__human { border-top: 1px solid var(--line); padding-top: 0.6rem; display: flex; flex-direction: column; gap: 0.3rem; align-items: flex-start; font-size: 0.85rem; }
+.armed { color: var(--warn); font-size: 0.82rem; }
+
+.outcome ul, .handoffs ul { margin: 0.3rem 0; padding-left: 1.1rem; font-size: 0.88rem; }
+
+/* ---- tables, inbox, artifacts ---- */
+.table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+.table th { text-align: left; color: var(--muted); font-weight: 500; padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--line); }
+.table td { padding: 0.4rem 0.6rem; border-bottom: 1px solid #ffffff0a; }
+
+.inbox { list-style: none; margin: 0.6rem 0; padding: 0; display: flex; flex-direction: column; gap: 0.6rem; }
+.inbox__item { background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--human); border-radius: 8px; padding: 0.7rem 0.9rem; display: flex; justify-content: space-between; gap: 1rem; align-items: center; }
+.inbox__item--claimed { border-left-color: var(--muted); }
+.inbox--past { font-size: 0.86rem; }
+.inbox--past li { padding: 0.2rem 0; }
+
+.artifacts { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 0.9rem; align-items: start; }
+@media (max-width: 900px) { .artifacts { grid-template-columns: 1fr; } }
+.artifacts aside { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 0.8rem; }
+.artifacts__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.35rem; font-size: 0.88rem; }
+.artifacts article { display: flex; flex-direction: column; gap: 0.9rem; }
+.artifacts article > header { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 0.9rem; display: block; }
+.approve { display: flex; gap: 0.7rem; align-items: center; flex-wrap: wrap; margin-top: 0.6rem; }
+.contract code { margin-right: 0.35rem; }
+.asteps { list-style: none; margin: 0.4rem 0 0; padding: 0; display: flex; flex-direction: column; gap: 0.55rem; }
+.astep { border-top: 1px solid #ffffff0a; padding-top: 0.45rem; }
+.astep__head { display: flex; gap: 0.45rem; align-items: center; flex-wrap: wrap; }
+.astep__n { color: var(--muted); min-width: 1.3rem; }
+
+/* A checkbox is a row, not a column: the flex-column default on `label` stacks it awkwardly. */
+.check > span { display: flex; align-items: center; gap: 0.45rem; }
+.check input[type="checkbox"] { width: auto; accent-color: var(--accent); }
+
+/* "live" vs "step" is worth distinguishing: one is the browser now, the other is what it looked
+   like when the engine last acted. */
+.tick { font-size: 0.7rem; padding: 0.05rem 0.4rem; border-radius: 3px; text-transform: uppercase; letter-spacing: 0.04em; }
+.tick--live { background: #3ecf8e26; color: var(--replay); }
+.tick--step { background: #5b9cff26; color: var(--accent); }
+
+/* The application and what is being done to it, side by side. Stacks below 1400px, where the
+   viewport would otherwise be too narrow to read the bank screen inside it. */
+/* The viewport gets the lion's share: it is showing a 1280px-wide legacy application scaled down,
+   and below about 800px of width the bank's own text stops being readable. */
+.live__pair { display: grid; grid-template-columns: minmax(0, 2.1fr) minmax(0, 1fr); gap: 0.9rem; align-items: start; }
+.live__pair > * { min-width: 0; }
+.live__pair .steps__list, .live__pair .building__steps { max-height: 420px; overflow-y: auto; }
+@media (max-width: 1400px) { .live__pair { grid-template-columns: 1fr; } }
+
+/* One entry in the panel means something different from the others: the engine gives up and asks
+   for a person. It is worth being obvious about which. */
+.scenario--escalates { border-left: 2px solid var(--human); padding-left: 0.5rem; margin-left: -0.5rem; }
+.scenario--escalates > button:first-child { border-color: var(--human); color: var(--human); }
+.scenarios__legend { border-top: 1px solid var(--line); padding-top: 0.5rem; font-size: 0.78rem; }
+
+/* Evidence browser: a file list that stays short, and a viewer that does not push the page around. */
+.evidence__files { list-style: none; margin: 0.5rem 0 0; padding: 0; font-size: 0.85rem; max-height: 200px; overflow-y: auto; }
+.evidence__files li { display: flex; justify-content: space-between; gap: 0.8rem; padding: 0.18rem 0; border-top: 1px solid #ffffff0a; }
+.evidence__view { margin-top: 0.7rem; border-top: 1px solid var(--line); padding-top: 0.7rem; }
+.evidence__view img { max-width: 100%; border: 1px solid var(--line); border-radius: 6px; }
+.evidence__view pre { max-height: 340px; overflow: auto; background: #0b0d11; padding: 0.6rem; border-radius: 6px; font-size: 0.76rem; line-height: 1.45; }

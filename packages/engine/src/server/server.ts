@@ -8,8 +8,8 @@
  * a thing with an engine bolted to it.
  */
 import { createServer, type Server } from "node:http";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { join, normalize, resolve as resolvePath } from "node:path";
 import express, { type Express, type Request, type Response } from "express";
 import { WebSocketServer, type WebSocket } from "ws";
 import { validateCapability } from "@cua/schema";
@@ -31,6 +31,8 @@ export interface ServerOptions {
    * without changing the server.
    */
   provider?: (name?: string) => LlmProvider;
+  /** Shown pre-filled in the console's entry gate. */
+  portalUrl?: string;
 }
 
 const publicRun = (r: RunRecord) => ({
@@ -59,7 +61,7 @@ export function createServerApp(opts: ServerOptions = {}): { app: Express; regis
 
   app.post("/api/replay", (req, res) => {
     void (async () => {
-      const body = req.body as { artifactPath?: string; artifact?: unknown; params?: Record<string, string>; fault?: { name: string; sticky?: boolean }; headless?: boolean; allowDraft?: boolean };
+      const body = req.body as { artifactPath?: string; artifact?: unknown; params?: Record<string, string>; fault?: { name: string; sticky?: boolean }; headless?: boolean; allowDraft?: boolean; pauseAtStart?: boolean; stepDelayMs?: number };
       const raw = body.artifact ?? (body.artifactPath ? readJson(artifactsDir, body.artifactPath) : undefined);
       if (!raw) return void res.status(400).json({ error: "artifact or artifactPath is required" });
       const check = validateCapability(raw);
@@ -69,6 +71,8 @@ export function createServerApp(opts: ServerOptions = {}): { app: Express; regis
         ...(body.fault ? { fault: body.fault } : {}),
         headless: body.headless ?? opts.headless ?? true,
         allowDraft: body.allowDraft ?? true,
+        ...(body.pauseAtStart ? { pauseAtStart: true } : {}),
+        ...(body.stepDelayMs ? { stepDelayMs: body.stepDelayMs } : {}),
         ...(opts.interventionTimeoutMs ? { interventionTimeoutMs: opts.interventionTimeoutMs } : {}),
       });
       res.status(201).json(publicRun(run));
@@ -88,6 +92,46 @@ export function createServerApp(opts: ServerOptions = {}): { app: Express; regis
     const keepAlive = setInterval(() => res.write(": ping\n\n"), 15_000);
     keepAlive.unref?.();
     req.on("close", () => { offEvent(); offRun(); clearInterval(keepAlive); });
+  });
+
+  /**
+   * What a run left behind. The proof that it ran, and the only thing a reviewer has to go on when
+   * nobody was watching — so it is worth being able to see it without opening a terminal.
+   */
+  app.get("/api/runs/:id/evidence", (req, res) => {
+    const run = registry.get(String(req.params.id));
+    if (!run) return void notFound(res, "run");
+    const walk = (dir: string, prefix = ""): { path: string; bytes: number; kind: string }[] =>
+      readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+        const rel = prefix ? `${prefix}/${e.name}` : e.name;
+        if (e.isDirectory()) return walk(join(dir, e.name), rel);
+        const kind = e.name.endsWith(".png") ? "image" : e.name.endsWith(".jsonl") ? "events" : e.name.endsWith(".json") ? "json" : e.name.endsWith(".md") ? "markdown" : e.name.endsWith(".zip") ? "trace" : "text";
+        return [{ path: rel, bytes: statSync(join(dir, e.name)).size, kind }];
+      });
+    const files = existsSync(run.evidenceDir) ? walk(run.evidenceDir).sort((a, b) => a.path.localeCompare(b.path)) : [];
+    res.json({ runId: run.id, dir: run.evidenceDir, files });
+  });
+
+  /**
+   * Serve a file out of a run's evidence directory — the screenshots the engine saved as it went.
+   *
+   * These are the frames the engine actually acted on, one per step, already on disk. Showing them
+   * costs the live browser nothing, which makes them the right thing to render while the engine is
+   * working and the live stream is deliberately slow.
+   */
+  app.get(/^\/api\/runs\/([^/]+)\/evidence\/(.+)$/, (req, res) => {
+    // Express 5 exposes a regex route's groups as numeric keys, not as an array, so this cannot be
+    // destructured positionally the way a path-pattern route can.
+    const params = req.params as unknown as Record<string, string>;
+    const id = params["0"];
+    const rel = params["1"];
+    const run = registry.get(String(id));
+    if (!run) return void notFound(res, "run");
+    // Contain the path inside the run's own directory: the rest of the filesystem is not evidence.
+    const root = resolvePath(run.evidenceDir);
+    const target = resolvePath(root, normalize(String(rel)));
+    if (!target.startsWith(root + "/") || !existsSync(target)) return void notFound(res, "file");
+    res.sendFile(target);
   });
 
   // ---- session control ----
@@ -188,6 +232,75 @@ export function createServerApp(opts: ServerOptions = {}): { app: Express; regis
       });
       res.status(201).json(publicRun(run));
     })().catch((e: Error) => res.status(500).json({ error: e.message }));
+  });
+
+  /**
+   * Promote a draft artifact to approved. Unattended replay refuses drafts, so this is the gate
+   * between "a model worked this out once" and "this may run without a person watching" — which is
+   * the whole point of the artifact having a status at all.
+   */
+  app.post("/api/artifacts/:file/approve", (req, res) => {
+    const file = String(req.params.file);
+    const path = join(artifactsDir, file);
+    if (!existsSync(path) || file.includes("..")) return void notFound(res, "artifact");
+    const raw = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
+    const by = String((req.body as { by?: string }).by ?? "operator");
+    const cap = raw["capability"] as Record<string, unknown>;
+    const prov = raw["provenance"] as Record<string, unknown>;
+    cap["status"] = "approved";
+    prov["approvedBy"] = by;
+    prov["approvedAt"] = new Date().toISOString();
+    // Validate before writing: approving an artifact into a state the engine would reject at
+    // pre-flight would be a worse outcome than refusing the approval.
+    const check = validateCapability(raw);
+    if (!check.ok) return void res.status(400).json({ error: "approval would produce an invalid artifact", issues: check.issues });
+    writeFileSync(path, JSON.stringify(raw, null, 2) + "\n");
+    res.json({ file, status: "approved", approvedBy: by, approvedAt: prov["approvedAt"] });
+  });
+
+  /**
+   * Everything the console's entry gate needs, so the demo is configured in one place rather than
+   * hard-coded into a React component: where the target application is, which goals are worth
+   * showing, and which faults can be injected.
+   */
+  app.get("/api/demo", (_req, res) => {
+    const artifacts = existsSync(artifactsDir)
+      ? readdirSync(artifactsDir).filter((f) => f.endsWith(".json")).map((f) => {
+          const cap = JSON.parse(readFileSync(join(artifactsDir, f), "utf8")) as { capability: { id: string; version: number; name: string; status: string }; inputs: Record<string, { type: string; required: boolean; example?: string }>; policy: { allowedOrigins: string[] } };
+          return { file: f, id: cap.capability.id, version: cap.capability.version, name: cap.capability.name, status: cap.capability.status, inputs: cap.inputs, allowedOrigins: cap.policy.allowedOrigins };
+        })
+      : [];
+    res.json({
+      portalUrl: opts.portalUrl ?? "http://localhost:4100/",
+      goals: [
+        {
+          key: "G1", kind: "discover", risk: "read-only",
+          title: "Read a member's savings balance",
+          goal: "Look up member {memberId} and read the current balance of their Savings account.",
+          params: { memberId: "10042" },
+          capabilityId: "member-savings-balance",
+        },
+        {
+          key: "G2", kind: "discover", risk: "makes a change",
+          title: "Open a new sub-account for a member",
+          goal: "For member {memberId}, open a new Savings sub-account nicknamed {nickname} funded from their existing Checking account.",
+          params: { memberId: "10042", nickname: "Holiday Fund" },
+          capabilityId: "member-open-subaccount",
+        },
+      ],
+      artifacts,
+      faults: [
+        { name: "not_found", label: "Member not found", expect: "business outcome MEMBER_NOT_FOUND, exit 0" },
+        { name: "validation", label: "Form rejected", expect: "business outcome VALIDATION_ERROR" },
+        { name: "permission_denied", label: "Not authorised", expect: "business outcome PERMISSION_DENIED" },
+        { name: "session_expired", label: "Session expired", expect: "recovered: re-runs the login prelude" },
+        { name: "unexpected_dialog", label: "Known dialog appears", expect: "recovered: it is in the outcome catalog, so it is dismissed" },
+        { name: "blocking_dialog", label: "Undeclared error on the next click", expect: "escalates: UNKNOWN_DIALOG — the engine stops and asks for a person", escalates: true },
+        { name: "slow", label: "Slow responses", expect: "tolerated, flagged as SLOW_LOAD" },
+        { name: "server_error", label: "Server error", expect: "recovered: reloads" },
+      ],
+      providers: [{ name: "fake", label: "Scripted (no API key, no cost)" }, { name: "anthropic", label: "Claude (uses your API key)" }],
+    });
   });
 
   app.get("/api/health", (_req, res) => void res.json({ ok: true, runs: registry.list().length }));

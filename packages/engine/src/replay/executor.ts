@@ -45,6 +45,12 @@ export interface ReplayOptions {
   escalateOnFailure?: boolean;
   runTimeoutMs?: number;
   slowThresholdMs?: number;
+  /**
+   * Wait this long after each step. Nothing to do with correctness — a read-only replay finishes in
+   * about two seconds, which is faster than a person can follow, so a demonstration needs a way to
+   * pace it. Excluded from the run budget for the same reason a human pause is.
+   */
+  stepDelayMs?: number;
   /** Resume support (slice 007): start the main flow at this step index, skipping preludes. */
   startAtStepIndex?: number;
   /** Human-in-the-loop hooks (slice 007 wires these to the console). */
@@ -95,6 +101,16 @@ interface RunState {
 }
 
 const BACKOFF_MS = [500, 1500, 4000];
+
+/** Resolve with `onTimeout()` if the promise has not settled in time. The promise is abandoned. */
+async function withTimeout<T>(p: Promise<T>, ms: number, onTimeout: () => T): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([p, new Promise<T>((r) => { timer = setTimeout(() => r(onTimeout()), ms); })]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
 
 /** Below this similarity, a resolved control is reported as having moved. Soft: never fails a run. */
 export const VISUAL_DRIFT_THRESHOLD = 0.6;
@@ -263,7 +279,9 @@ export async function replay(opts: ReplayOptions): Promise<ReplayResult> {
     evidence.event({ type: "escalate", ...(step ? { stepId: step.id } : {}), stepIndex, interventionId: id, reason, detail, ...(screenshot ? { screenshot } : {}) });
     if (!opts.onEscalate) throw new Stop({ status: "escalated", interventionId: id, reason, ...(step ? { atStep: step.id } : {}), detail, ...common(state) });
     const decision = await awaitHuman("human intervention", () => opts.onEscalate!({ interventionId: id, reason, ...(step ? { stepId: step.id } : {}), stepIndex, detail, ...(screenshot ? { screenshot } : {}) }));
-    evidence.event({ type: "resume", ...(step ? { stepId: step.id } : {}), resumeAt: decision });
+    // Deliberately not logged here. Whoever owns the intervention logs the answer; a bare hook with
+    // no session records nothing, which is correct — there was no operator to attribute it to.
+    log(`  resumed at ${decision}`);
     if (decision === "abort") throw new Stop({ status: "escalated", interventionId: id, reason, ...(step ? { atStep: step.id } : {}), detail: `${detail} (aborted by operator)`, ...common(state) });
     return decision;
   };
@@ -401,7 +419,7 @@ export async function replay(opts: ReplayOptions): Promise<ReplayResult> {
         await new Promise((r) => setTimeout(r, 300));
         sig = await checkSignature(step.precondition, surface, state.ctx);
       }
-      evidence.event({ type: "precondition", stepId: step.id, stepIndex: index, ok: sig.ok, expectedLandmarks: step.precondition.landmarks.map((l) => `${l.role} "${l.name}"`), observedLandmarks: sig.landmarksFound });
+      evidence.event({ type: "precondition", phase, stepId: step.id, stepIndex: index, ok: sig.ok, expectedLandmarks: step.precondition.landmarks.map((l) => `${l.role} "${l.name}"`), observedLandmarks: sig.landmarksFound });
       if (!sig.ok) {
         const found = await classify(step, index, undefined, "precondition");
         if (found) {
@@ -451,7 +469,7 @@ export async function replay(opts: ReplayOptions): Promise<ReplayResult> {
         await fail("EXTRACTION_FAILED", step, `${step.output} via ${spec!.extract.candidates.map((c) => c.strategy).join(" → ")}`, r.error ?? "no value");
       }
       state.outputs[step.output!] = r.parsed;
-      evidence.event({ type: "extract", stepId: step.id, stepIndex: index, output: step.output!, strategy: r.strategy!, raw: r.raw!, parsed: r.parsed });
+      evidence.event({ type: "extract", phase, stepId: step.id, stepIndex: index, output: step.output!, strategy: r.strategy!, raw: r.raw!, parsed: r.parsed });
       if ((r.candidateIndex ?? 0) > 0) {
         state.drift.push({ stepId: step.id, primaryStrategy: spec!.extract.candidates[0]!.strategy, matchedStrategy: r.strategy!, candidateIndex: r.candidateIndex! });
         evidence.event({ type: "drift", stepId: step.id, stepIndex: index, primaryStrategy: spec!.extract.candidates[0]!.strategy, matchedStrategy: r.strategy! });
@@ -467,8 +485,15 @@ export async function replay(opts: ReplayOptions): Promise<ReplayResult> {
         case "press": action = { kind: "press", key: resolveValue(step.value!, state.ctx) }; break;
         case "dismissDialog": action = { kind: "dismissDialog", accept: true }; break;
       }
-      const res = await surface.act(action);
-      evidence.event({ type: "act", stepId: step.id, stepIndex: index, action: step.action, ...(step.target ? { target: step.target.candidates[0] ? `${step.target.candidates[0].strategy}` : "?" } : {}), ...(step.value && step.value.kind !== "secret" ? { value: describeValue(step.value) } : {}), controller: "replay", ok: res.ok, ...(res.error ? { error: res.error } : {}) });
+      // No single action may hang the run. The surface already abandons an action that a modal
+      // dialog froze, but this is the backstop for anything it cannot see — a request that never
+      // returns, a frame that never settles.
+      const res = await withTimeout(
+        surface.act(action),
+        Math.max(2000, Math.min(step.timeoutMs, state.deadline - Date.now())),
+        () => ({ ok: false, error: "STEP_TIMEOUT: the action did not return", durationMs: 0 }),
+      );
+      evidence.event({ type: "act", phase, stepId: step.id, stepIndex: index, action: step.action, ...(step.target ? { target: step.target.candidates[0] ? `${step.target.candidates[0].strategy}` : "?" } : {}), ...(step.value && step.value.kind !== "secret" ? { value: describeValue(step.value) } : {}), controller: "replay", ok: res.ok, ...(res.error ? { error: res.error } : {}) });
       if (res.resolved) {
         evidence.event({ type: "resolve", stepId: step.id, stepIndex: index, matchedStrategy: res.resolved.strategy, candidateIndex: res.resolved.candidateIndex, attempts: res.resolved.attempts });
         // Soft signal: the right control was found, but it is not where it was recorded. A relayout
@@ -489,6 +514,14 @@ export async function replay(opts: ReplayOptions): Promise<ReplayResult> {
         }
       }
       if (!res.ok) {
+        if (res.error?.startsWith("STEP_TIMEOUT")) {
+          const found = await classify(step, index);
+          if (found) {
+            const next = await handleDetection(found, step, index, phase);
+            if (next !== "continue") return runStep(step, index, phase, attempt);
+          }
+          await fail("STEP_TIMEOUT", step, `${step.action} to return within ${step.timeoutMs}ms`, res.error);
+        }
         if (res.error === "LOCATOR_NOT_FOUND") {
           // the screen may explain it (e.g. session expired) before we blame the locator
           const found = await classify(step, index);
@@ -526,7 +559,7 @@ export async function replay(opts: ReplayOptions): Promise<ReplayResult> {
     for (const a of step.expect) {
       const stepBudget = budget();
       const v: Verdict = await waitForAssertion(a, surface, state.ctx, stepBudget, step.target, frame);
-      evidence.event({ type: "verify", stepId: step.id, stepIndex: index, assertion: describeAssertion(a), ok: v.ok, observed: v.observed.slice(0, 200) });
+      evidence.event({ type: "verify", phase, stepId: step.id, stepIndex: index, assertion: describeAssertion(a), ok: v.ok, observed: v.observed.slice(0, 200) });
       if (!v.ok) {
         const found = await classify(step, index);
         const next = await handleDetection(found, step, index, phase);
@@ -554,7 +587,18 @@ export async function replay(opts: ReplayOptions): Promise<ReplayResult> {
     }
     const shot = await surface.observe();
     state.lastScreenshot = evidence.screenshot(`${phase}-${step.id.replace("step:", "")}`, shot.rawScreenshotPng);
+    // The screenshot was already being saved for evidence; announcing it costs nothing and gives a
+    // watching console a frame per step without asking the browser for anything extra.
+    evidence.event({
+      type: "observe", phase, stepId: step.id, stepIndex: index, url: shot.url, title: shot.title,
+      elementCount: shot.elements.length, screenshot: state.lastScreenshot,
+      ...(shot.dialog ? { dialog: { type: shot.dialog.type, message: shot.dialog.message } } : {}),
+    });
     state.stepsRun += 1;
+    if (opts.stepDelayMs) {
+      await new Promise((r) => setTimeout(r, opts.stepDelayMs));
+      state.deadline += opts.stepDelayMs;
+    }
   };
 
   // ---- run ----

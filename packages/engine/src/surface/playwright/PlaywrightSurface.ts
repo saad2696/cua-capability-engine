@@ -117,6 +117,21 @@ export class PlaywrightSurface implements Surface {
     return this.dialog?.info;
   }
 
+  /**
+   * Serialises observation against plain screenshots.
+   *
+   * `observe` injects the numbered marks into the page, takes its picture, then removes them. A
+   * frame streamed to a watching console at the wrong instant catches those marks half-drawn, which
+   * looks like the application is broken. Anything that photographs the page waits its turn.
+   */
+  private marking: Promise<unknown> = Promise.resolve();
+
+  private async serialised<T>(fn: () => Promise<T>): Promise<T> {
+    const mine = this.marking.then(fn, fn);
+    this.marking = mine.catch(() => undefined);
+    return mine;
+  }
+
   async observe(): Promise<Observation> {
     const at = new Date().toISOString();
     if (this.dialog) {
@@ -138,7 +153,7 @@ export class PlaywrightSurface implements Surface {
     const elements = await perceiveElements(this.cdp, frames, this.viewport);
     const landmarks = await perceiveLandmarks(this.cdp, frames, this.viewport);
     const rawScreenshotPng = await this.page.screenshot({ type: "png" });
-    const screenshotPng = await withMarks(this.page, elements, () => this.page.screenshot({ type: "png" }));
+    const screenshotPng = await this.serialised(() => withMarks(this.page!, elements, () => this.page!.screenshot({ type: "png" })));
     const obs: Observation = {
       at, url: this.page.url(), title: await this.page.title().catch(() => ""), frames: frameInfos, landmarks, elements, screenshotPng, rawScreenshotPng,
       viewport: this.viewport, ...(this.lastStatus !== undefined ? { lastHttpStatus: this.lastStatus } : {}),
@@ -149,6 +164,11 @@ export class PlaywrightSurface implements Surface {
 
   async screenshot(opts: { fullPage?: boolean } = {}): Promise<Buffer> {
     if (this.dialog) return this.lastObservation?.rawScreenshotPng ?? Buffer.alloc(0);
+    // Waits for any in-flight marked capture, so a streamed frame never shows half-drawn marks.
+    return this.serialised(() => this.screenshotNow(opts));
+  }
+
+  private async screenshotNow(opts: { fullPage?: boolean } = {}): Promise<Buffer> {
     return this.page.screenshot({ type: "png", fullPage: opts.fullPage ?? false });
   }
 
@@ -245,11 +265,44 @@ export class PlaywrightSurface implements Surface {
 
   // ---- acting ----
 
+  /**
+   * Resolves as soon as a modal dialog appears. A native alert freezes the page, so any Playwright
+   * action already in flight never settles — the caller waits for a click that can no longer happen.
+   * Racing against this turns an indefinite hang into "the dialog is why", which the executor can
+   * classify and escalate. Legacy applications raise these on interaction, not only on load, so the
+   * case is not exotic.
+   */
+  private dialogAppeared(): Promise<"dialog"> {
+    return new Promise((resolve) => {
+      if (this.dialog) return resolve("dialog");
+      const iv = setInterval(() => {
+        if (this.dialog) {
+          clearInterval(iv);
+          resolve("dialog");
+        }
+      }, 50);
+      iv.unref?.();
+    });
+  }
+
   async act(action: SurfaceAction): Promise<ActResult> {
     const started = Date.now();
     const done = (partial: Omit<ActResult, "durationMs">): ActResult => ({ ...partial, durationMs: Date.now() - started });
     try {
       if (this.dialog && action.kind !== "dismissDialog") return done({ ok: false, error: `dialog open: ${this.dialog.info.type} "${this.dialog.info.message}"` });
+      if (action.kind !== "dismissDialog") {
+        const outcome = await Promise.race([this.perform(action, done), this.dialogAppeared()]);
+        if (outcome !== "dialog") return outcome;
+        return done({ ok: false, error: `dialog open: ${this.dialog!.info.type} "${this.dialog!.info.message}"` });
+      }
+      return await this.perform(action, done);
+    } catch (e) {
+      return done({ ok: false, error: (e as Error).message });
+    }
+  }
+
+  private async perform(action: SurfaceAction, done: (partial: Omit<ActResult, "durationMs">) => ActResult): Promise<ActResult> {
+    try {
       switch (action.kind) {
         case "navigate": {
           await this.open(action.url);

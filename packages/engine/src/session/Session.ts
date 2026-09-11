@@ -164,24 +164,20 @@ export class Session implements LeaseAuthority {
     iv.status = "resolved";
     iv.resolvedAt = new Date().toISOString();
     iv.resolution = { resumeAt, by, ...(note ? { note } : {}) };
-    this.opts.evidence.event({ type: "resume", resumeAt, ...(note ? { note } : {}), ...(iv.stepId ? { stepId: iv.stepId } : {}) });
+    // The session is the authority on what the operator answered, so it is the one thing that logs
+    // it. The executor used to log a second, identical `resume` for the same decision.
+    this.opts.evidence.event({ type: "resume", resumeAt, ...(note ? { note } : {}), ...(iv.stepId ? { stepId: iv.stepId } : {}), by });
     this.persist();
 
     // A manual pause has no waiting engine promise: the engine is blocked inside shouldContinue,
     // so resolving it means releasing that, not answering an escalation.
     if (iv.kind === "manual_pause") {
-      this.releaseControl();
-      if (resumeAt === "abort") {
-        this.aborted = true;
-        this.manualPause?.release();
-        this.manualPause = undefined;
-        this.setState("aborted");
-        return;
-      }
-      this.takeControl(this.opts.engineController);
+      if (resumeAt === "abort") this.aborted = true;
+      // shouldContinue re-takes control on the way out, so nothing is done to the lease here. Doing
+      // it in both places is how the engine ended up with a lease it could not use.
       this.manualPause?.release();
       this.manualPause = undefined;
-      this.setState("running");
+      if (this.aborted) this.setState("aborted");
       return;
     }
 
@@ -208,14 +204,21 @@ export class Session implements LeaseAuthority {
     }
   }
 
-  /** Force an intervention with no underlying failure, so an operator can look at a healthy run. */
+  /**
+   * Force an intervention with no underlying failure, so an operator can look at a healthy run.
+   *
+   * A pause is a request to stop at the next safe point, not an immediate seizure of the browser.
+   * Control stays with the engine until it reaches its next between-steps check, because taking it
+   * away mid-step would leave the engine unable to finish the action it had already started — and,
+   * when the pause is raised before the run's first step, unable even to open the page. The state
+   * only becomes `paused` when the engine has actually stopped.
+   */
   async pause(by = "operator"): Promise<InterventionRequest> {
     if (this.manualPause) throw new Error("already paused");
     let release!: () => void;
     const promise = new Promise<void>((r) => (release = r));
     this.manualPause = { promise, release };
-    const iv = await this.openIntervention("MANUAL_PAUSE", "manual_pause", undefined, -1, `paused by ${by}`);
-    return iv;
+    return this.openIntervention("MANUAL_PAUSE", "manual_pause", undefined, -1, `paused by ${by}`, undefined, { yieldControl: false });
   }
 
   /** Release a manual pause without an intervention resolution (the operator changed their mind). */
@@ -226,11 +229,8 @@ export class Session implements LeaseAuthority {
       iv.resolvedAt = new Date().toISOString();
       iv.resolution = { resumeAt: "same", by: "operator" };
     }
-    this.releaseControl();
-    this.takeControl(this.opts.engineController);
     this.manualPause?.release();
     this.manualPause = undefined;
-    this.setState("running");
   }
 
   abort(): void {
@@ -294,7 +294,17 @@ export class Session implements LeaseAuthority {
   /** Wire into `ReplayOptions.shouldContinue`. Blocks for as long as a manual pause is in force. */
   readonly shouldContinue = async (): Promise<"continue" | "abort"> => {
     if (this.aborted) return "abort";
-    if (this.manualPause) await this.manualPause.promise;
+    if (this.manualPause) {
+      // This is the safe point the pause was waiting for: hand control over now, and take it back
+      // when the operator is done.
+      this.releaseControl();
+      this.setState("paused");
+      await this.manualPause.promise;
+      if (!this.aborted) {
+        this.takeControl(this.opts.engineController);
+        this.setState("running");
+      }
+    }
     return this.aborted ? "abort" : "continue";
   };
 
@@ -319,6 +329,7 @@ export class Session implements LeaseAuthority {
   private async openIntervention(
     reason: EscalationReason | "MANUAL_PAUSE", kind: InterventionKind,
     stepId: string | undefined, stepIndex: number, detail: string, screenshot?: string,
+    { yieldControl = true }: { yieldControl?: boolean } = {},
   ): Promise<InterventionRequest> {
     // Snapshot enough context that the operator never has to read a log to decide.
     let url: string | undefined;
@@ -341,8 +352,14 @@ export class Session implements LeaseAuthority {
       createdAt: new Date().toISOString(), status: "open",
     };
     this.interventions.set(iv.id, iv);
-    this.releaseControl();
-    this.setState("paused");
+    if (yieldControl) {
+      this.releaseControl();
+      this.setState("paused");
+    } else {
+      // A requested pause: the engine keeps driving until it reaches a safe point. Announce the
+      // request so the console can show it immediately, but do not change who is in control.
+      this.opts.onChange?.(this);
+    }
     this.persist();
     return iv;
   }

@@ -6,6 +6,8 @@ export const ControllerSchema = z.enum(["none", "agent", "replay", "human"]);
 export type Controller = z.infer<typeof ControllerSchema>;
 
 const base = {
+  /** Which sequence the event belongs to. Lets a reader tell a prelude's steps from the flow's own. */
+  phase: z.enum(["prelude", "main"]).optional(),
   seq: z.number().int().nonnegative(),
   ts: IsoDateTimeSchema,
   runId: z.string().min(1),
@@ -48,7 +50,7 @@ export const EventSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("escalate"), interventionId: z.string(), reason: z.string(), detail: z.string(), screenshot: z.string().optional(), ...base }),
   z.object({ type: z.literal("control_change"), from: ControllerSchema, to: ControllerSchema, by: z.string().optional(), leaseId: z.string().optional(), ...base }),
   z.object({ type: z.literal("human_action"), action: z.string(), locator: LocatorSchema.optional(), value: z.string().optional(), screenshotBefore: z.string().optional(), screenshotAfter: z.string().optional(), ...base }),
-  z.object({ type: z.literal("resume"), resumeAt: z.enum(["same", "next", "abort"]), note: z.string().optional(), ...base }),
+  z.object({ type: z.literal("resume"), resumeAt: z.enum(["same", "next", "abort"]), note: z.string().optional(), by: z.string().optional(), ...base }),
   z.object({ type: z.literal("page_switch"), from: z.string(), to: z.string(), ...base }),
   z.object({ type: z.literal("skipped_optional"), reason: z.string(), ...base }),
   z.object({ type: z.literal("pruned"), removedStepIds: z.array(z.string()), reason: z.string(), ...base }),

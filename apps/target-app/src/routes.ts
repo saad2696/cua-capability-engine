@@ -4,7 +4,7 @@ import type { MemberStore } from "./data/members.js";
 import { armFault, disarmFaults, faultState, fires, isFault, slowDelayMs } from "./faults.js";
 import type { SessionStore} from "./session.js";
 import { clearSessionCookie, sessionToken, setSessionCookie } from "./session.js";
-import { UNEXPECTED_DIALOG_SCRIPT, frameset, navFrame } from "./views/layout.js";
+import { BLOCKING_DIALOG_SCRIPT, UNEXPECTED_DIALOG_SCRIPT, frameset, navFrame } from "./views/layout.js";
 import {
   confirmPage, donePage, faultsPage, forbiddenPage, loginPage, memberPage, notFoundPage,
   searchPage, serverErrorPage, stubPage, subAccountFormPage, type SubAccountForm,
@@ -27,6 +27,7 @@ export function buildRouter(deps: AppDeps): Router {
     const opts: { user?: string; injectScript?: string } = {};
     if (s) opts.user = s.user;
     if (fires(res, "unexpected_dialog")) opts.injectScript = UNEXPECTED_DIALOG_SCRIPT;
+    if (fires(res, "blocking_dialog")) opts.injectScript = BLOCKING_DIALOG_SCRIPT;
     return opts;
   }
 

@@ -105,3 +105,26 @@ export function jsLink(label: string, url: string): string {
 
 export const UNEXPECTED_DIALOG_SCRIPT =
   `alert('System maintenance tonight 10:00 PM - 11:00 PM ET. Save your work.');`;
+
+/**
+ * A dialog no capability declares, raised when the operator touches a control rather than on load.
+ *
+ * The maintenance notice above is in the seeded outcome catalog, so the engine dismisses it and
+ * carries on — which demonstrates recovery. This one is deliberately absent from every catalog and
+ * worded like a real integration failure, so the engine classifies it as UNKNOWN_DIALOG and hands
+ * the session to a person. That is the other half of the story: the automation knowing when to stop.
+ *
+ * It fires on interaction because that is how these faults actually present in a legacy core: the
+ * page renders, and the failure only surfaces when you try to use it.
+ */
+export const BLOCKING_DIALOG_SCRIPT = `
+(function () {
+  var fired = false;
+  function block(e) {
+    if (fired) return;
+    fired = true;
+    alert('Core banking link unavailable (ERR-7731). Retry later or contact the service desk.');
+  }
+  document.addEventListener('click', block, true);
+  document.addEventListener('focusin', block, true);
+})();`;

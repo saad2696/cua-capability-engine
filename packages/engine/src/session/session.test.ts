@@ -147,11 +147,20 @@ describe("manual pause", () => {
     expect(await session.shouldContinue()).toBe("continue");
 
     const iv = await session.pause("operator-1");
-    expect(session.state).toBe("paused");
+    // A pause is a request to stop at the next safe point, not an immediate seizure. Until the
+    // engine reaches that point it is still driving — taking the lease away mid-step would leave it
+    // unable to finish the action it had already started.
+    expect(session.state).toBe("running");
+    expect(session.controller).toBe("replay");
+    expect(iv.kind).toBe("manual_pause");
+
     let released = false;
     const blocked = session.shouldContinue().then((r) => { released = true; return r; });
     await new Promise((r) => setTimeout(r, 20));
     expect(released).toBe(false); // the engine is genuinely stopped, not polling
+    // Now it has stopped, so control is genuinely free for an operator to claim.
+    expect(session.state).toBe("paused");
+    expect(session.controller).toBe("none");
 
     session.resolve(iv.id, "same", "operator-1");
     expect(await blocked).toBe("continue");
@@ -164,9 +173,20 @@ describe("manual pause", () => {
     session.start();
     const iv = await session.pause();
     const blocked = session.shouldContinue();
+    await new Promise((r) => setTimeout(r, 10));
     session.resolve(iv.id, "abort", "operator-1");
     expect(await blocked).toBe("abort");
     expect(session.state).toBe("aborted");
+  });
+
+  it("the engine can still finish the step it was in when the pause arrived", async () => {
+    // The case that made this behaviour necessary: a pause raised before the run's very first step
+    // used to revoke the lease immediately, so the engine could not even open the page.
+    const { session, acts } = makeSession();
+    const engine = session.start();
+    await session.pause("operator-1");
+    await engine.act({ kind: "navigate", url: "http://localhost:4100/" });
+    expect(acts).toEqual(["navigate"]);
   });
 });
 

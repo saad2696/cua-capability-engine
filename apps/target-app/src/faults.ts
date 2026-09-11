@@ -14,6 +14,7 @@ export const FAULTS = [
   "permission_denied",
   "session_expired",
   "unexpected_dialog",
+  "blocking_dialog",
   "slow",
   "server_error",
 ] as const;
