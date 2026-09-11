@@ -23,10 +23,14 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.124.0",
     "@cua/schema": "workspace:*",
-    "playwright": "^1.63.0"
+    "express": "^5.2.1",
+    "playwright": "^1.63.0",
+    "ws": "^8.21.3"
   },
   "devDependencies": {
     "@cua/config": "workspace:*",
-    "@types/node": "^24.0.0"
+    "@types/express": "^5.0.6",
+    "@types/node": "^24.0.0",
+    "@types/ws": "^8.18.1"
   }
 }

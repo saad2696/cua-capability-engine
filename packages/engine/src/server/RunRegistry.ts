@@ -1,0 +1,199 @@
+/**
+ * Runs in flight, and everything a console needs to watch or steer one.
+ *
+ * A run here is not a subprocess. The engine, the session, the browser and the evidence writer all
+ * live in this process, which is what makes "take control of the same live session" possible at all:
+ * the operator's clicks go to the very browser the replay was using, not to a copy of it.
+ */
+import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import type { Capability, Event, ReplayResult } from "@cua/schema";
+import { EvidenceWriter } from "../evidence/EvidenceWriter.js";
+import { Redactor } from "../evidence/redactor.js";
+import { basicPolicy } from "../policy/basic.js";
+import { replay } from "../replay/executor.js";
+import { Session } from "../session/Session.js";
+import { PlaywrightSurface } from "../surface/playwright/PlaywrightSurface.js";
+import type { Surface } from "../surface/types.js";
+
+export type RunStatus = "starting" | "running" | "paused" | "human_control" | "completed" | "failed";
+
+export interface RunRecord {
+  id: string;
+  kind: "replay" | "discover";
+  capabilityId: string;
+  capabilityVersion: number;
+  params: Record<string, string>;
+  /**
+   * Derived, never assigned. An earlier version stored it and had every run stick on "running"
+   * forever: releasing the engine's lease during teardown fired a change callback that recomputed
+   * the field from a session still marked running, clobbering the value the finally block had just
+   * written. A run's status is a function of what has happened to it, so it is written as one.
+   */
+  readonly status: RunStatus;
+  startedAt: string;
+  finishedAt?: string;
+  result?: ReplayResult;
+  evidenceDir: string;
+  /** The run's evidence writer: the server subscribes to it to stream events live. */
+  evidence: EvidenceWriter;
+  /** Origins this run is allowed to touch; the first is the app's base URL. */
+  origins: string[];
+  session: Session;
+  surface: Surface;
+  /** The last N events, so a console that connects late still has context. */
+  recent: Event[];
+}
+
+export interface StartReplayInput {
+  artifact: Capability | unknown;
+  params?: Record<string, string>;
+  secrets?: Record<string, string>;
+  /** Arm one of the mock app's faults before the run starts (demo only). */
+  fault?: { name: string; sticky?: boolean };
+  headless?: boolean;
+  allowDraft?: boolean;
+  escalateOnFailure?: boolean;
+  riskyStepsRequire?: "approvedArtifact" | "humanConfirm" | "block";
+  runTimeoutMs?: number;
+  interventionTimeoutMs?: number;
+}
+
+const RECENT_CAP = 200;
+
+export class RunRegistry {
+  private readonly runs = new Map<string, RunRecord>();
+  private readonly listeners = new Set<(r: RunRecord) => void>();
+
+  constructor(private readonly evidenceRoot: string) {}
+
+  list(): RunRecord[] {
+    return [...this.runs.values()].sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+  }
+  get(id: string): RunRecord | undefined {
+    return this.runs.get(id);
+  }
+  /** Find the run that owns an intervention, so the console can address it by intervention id alone. */
+  findByIntervention(interventionId: string): RunRecord | undefined {
+    return [...this.runs.values()].find((r) => r.session.allInterventions.some((i) => i.id === interventionId));
+  }
+  onChange(fn: (r: RunRecord) => void): () => void {
+    this.listeners.add(fn);
+    return () => this.listeners.delete(fn);
+  }
+  private changed(r: RunRecord): void {
+    for (const fn of this.listeners) {
+      try {
+        fn(r);
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+
+  async startReplay(input: StartReplayInput): Promise<RunRecord> {
+    const raw = input.artifact as { capability?: { id?: string; version?: number }; policy?: { allowedOrigins?: string[] } };
+    const capabilityId = raw.capability?.id ?? "unknown";
+    const runId = `run-${new Date().toISOString().slice(0, 10)}-${randomUUID().slice(0, 6)}`;
+    const params = input.params ?? {};
+    const secrets = input.secrets ?? {};
+
+    const redactor = new Redactor({ secrets: { ...secrets, ...Object.fromEntries(Object.entries(params).map(([k, v]) => [`param:${k}`, v])) } });
+    const evidence = new EvidenceWriter(runId, this.evidenceRoot, redactor);
+    const origins = raw.policy?.allowedOrigins?.length ? raw.policy.allowedOrigins : ["http://localhost:4100"];
+    const policy = basicPolicy({ allowedOrigins: origins, blockedUrlPatterns: ["/__faults", "/__reset"] });
+    const surface = new PlaywrightSurface({ headless: input.headless ?? true, allowRequest: (u) => policy.allowRequest(u), tracePath: join(evidence.dir, "trace.zip") });
+    surface.onPageSwitch((u) => (policy.allowRequest(u) ? "adopt" : "close"));
+
+    const record: RunRecord = {
+      id: runId, kind: "replay", capabilityId, capabilityVersion: raw.capability?.version ?? 1, params,
+      get status(): RunStatus {
+        if (this.finishedAt) return this.result?.status === "success" || this.result?.status === "business_outcome" ? "completed" : "failed";
+        if (!this.session) return "starting";
+        if (this.session.state === "human_control") return "human_control";
+        if (this.session.state === "paused") return "paused";
+        if (this.session.state === "idle") return "starting";
+        return "running";
+      },
+      startedAt: new Date().toISOString(), evidenceDir: evidence.dir, evidence, surface, origins,
+      recent: [],
+      session: undefined as unknown as Session,
+    };
+    const session = new Session({
+      runId, surface, evidence, engineController: "replay", capabilityId,
+      ...(input.interventionTimeoutMs ? { interventionTimeoutMs: input.interventionTimeoutMs } : {}),
+      onChange: () => this.changed(record),
+    });
+    record.session = session;
+    this.runs.set(runId, record);
+
+    evidence.subscribe((e) => {
+      record.recent.push(e);
+      if (record.recent.length > RECENT_CAP) record.recent.shift();
+    });
+
+    const engineSurface = session.start();
+    this.changed(record);
+
+    const cookies = input.fault
+      ? [{ url: origins[0]!, name: "cu_fault", value: input.fault.name }, ...(input.fault.sticky ? [{ url: origins[0]!, name: "cu_fault_sticky", value: "1" }] : [])]
+      : [];
+
+    // Deliberately not awaited: the caller gets a run id immediately and watches it over SSE.
+    void (async () => {
+      try {
+        const result = await replay({
+          artifact: input.artifact, params, secrets, surface: engineSurface, evidence,
+          globalPolicy: { allowedOrigins: origins },
+          allowDraft: input.allowDraft ?? true,
+          escalateOnFailure: input.escalateOnFailure ?? true,
+          riskyStepsRequire: input.riskyStepsRequire ?? "humanConfirm",
+          ...(input.runTimeoutMs ? { runTimeoutMs: input.runTimeoutMs } : {}),
+          cookies,
+          onEscalate: session.onEscalate,
+          shouldContinue: session.shouldContinue,
+          confirmRisky: session.confirmRisky,
+        });
+        record.result = result;
+      } catch (e) {
+        evidence.event({ type: "error", code: "SURFACE_ERROR", message: (e as Error).message });
+      } finally {
+        record.finishedAt = new Date().toISOString();
+        session.finish(record.status === "completed" ? "completed" : "aborted");
+        await surface.close().catch(() => {});
+        this.changed(record);
+      }
+    })();
+
+    return record;
+  }
+
+  /**
+   * Arm a fault inside the live run's own browser context, so the *next* thing the running flow does
+   * hits it. This is what makes the console's scenario buttons real rather than a re-run with
+   * different flags: the operator perturbs a run that is already in flight.
+   */
+  async injectScenario(runId: string, fault: string, sticky = false): Promise<void> {
+    const run = this.runs.get(runId);
+    if (!run) throw new Error(`no such run: ${runId}`);
+    if (run.finishedAt) throw new Error(`run ${runId} has already finished`);
+    const url = run.origins[0]!;
+    // Written through the raw surface, not a leased one: arming a scenario is the harness poking the
+    // application, not a controller acting in the flow, and it must work while a human holds control.
+    await run.surface.setCookie(url, "cu_fault", fault);
+    if (sticky) await run.surface.setCookie(url, "cu_fault_sticky", "1");
+  }
+
+  async stopAll(): Promise<void> {
+    for (const r of this.runs.values()) {
+      r.session.abort();
+      await r.surface.close().catch(() => {});
+    }
+  }
+}
+
+/** Read an artifact from disk, for the server's artifact endpoints. */
+export function readArtifact(path: string): Capability {
+  return JSON.parse(readFileSync(path, "utf8")) as Capability;
+}

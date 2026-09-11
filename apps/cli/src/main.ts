@@ -12,6 +12,7 @@ import { artifactCommand } from "./commands/artifact.js";
 import { observeCommand } from "./commands/observe.js";
 import { discoverCommand } from "./commands/discover.js";
 import { replayCommand } from "./commands/replay.js";
+import { serveCommand } from "./commands/serve.js";
 
 const [command = "help", ...rest] = process.argv.slice(2);
 
@@ -27,11 +28,15 @@ Commands:
   observe     <url> [--out dir] [--headed]   perceive a page: a11y elements + marked screenshot
   discover    --goal "..." --url <url> --capability-id <id> [--param k=v] [--provider anthropic|fake]
   replay      <artifact.json> [--param k=v] [--plan] [--allow-draft] [--fault <name>[:sticky]] [--headed]
+  serve       [--port 4200] [--headed]   control plane for the operator console (loopback only)
 
 More commands are added slice by slice; see openspec/ROADMAP.md.`);
 }
 
 switch (command) {
+  case "serve":
+    await serveCommand(rest);
+    break;
   case "replay":
     await replayCommand(rest);
     break;

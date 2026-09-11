@@ -19,6 +19,18 @@ export class EvidenceWriter {
     mkdirSync(join(this.dir, "screenshots"), { recursive: true });
   }
 
+  /**
+   * Live subscribers (the server's SSE streams). Events are already redacted when they get here, so
+   * a subscriber sees exactly what the file does — there is no second, richer channel to leak
+   * through. Subscription is best-effort: a slow or throwing consumer never affects the run.
+   */
+  private readonly subscribers = new Set<(e: Event) => void>();
+
+  subscribe(fn: (e: Event) => void): () => void {
+    this.subscribers.add(fn);
+    return () => this.subscribers.delete(fn);
+  }
+
   event<E extends EventInput>(e: E): Event {
     const full = { ...e, seq: this.seq, ts: new Date().toISOString(), runId: this.runId } as unknown as Event;
     this.seq += 1;
@@ -26,6 +38,13 @@ export class EvidenceWriter {
     const parsed = EventSchema.safeParse(redacted);
     if (!parsed.success) throw new Error(`invalid evidence event ${String((e as { type?: string }).type)}: ${parsed.error.issues.map((i) => i.path.join(".") + " " + i.message).join("; ")}`);
     appendFileSync(join(this.dir, "events.jsonl"), JSON.stringify(parsed.data) + "\n");
+    for (const fn of this.subscribers) {
+      try {
+        fn(parsed.data);
+      } catch {
+        /* a broken console must never break a run */
+      }
+    }
     return parsed.data;
   }
 
