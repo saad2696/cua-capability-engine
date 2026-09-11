@@ -94,6 +94,16 @@ layout-bound and never uses ids because legacy apps have none. Visual is the uni
 but is only trusted when its anchor text is still nearby. `confidence` is the recorder's prior;
 `stats` are filled only by the stability runner so unattended replays never rewrite the artifact.
 
+### The `text` pseudo-role
+
+Landmarks and role locators use accessibility roles, with one addition. A bare text node has no ARIA
+role, but page headers like `Legacy CU Core — Sign In` are among the most stable screen
+discriminators a legacy app offers, so the recorder emits them with `role: "text"`. This is a
+pseudo-role, defined by the artifact contract rather than by ARIA: **a visible text node, matched by
+its text content**. Every surface can honour it, including desktop accessibility APIs, where static
+text is likewise a first-class node without an interactive role. The Playwright surface implements it
+with a text match instead of a role match; no other part of the contract is surface-specific.
+
 ## Outputs and extraction
 
 ```jsonc

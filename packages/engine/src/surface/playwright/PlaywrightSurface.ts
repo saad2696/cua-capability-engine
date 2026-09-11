@@ -147,11 +147,36 @@ export class PlaywrightSurface implements Surface {
     return obs;
   }
 
-  async screenshot(): Promise<Buffer> {
-    return this.page.screenshot({ type: "png" });
+  async screenshot(opts: { fullPage?: boolean } = {}): Promise<Buffer> {
+    if (this.dialog) return this.lastObservation?.rawScreenshotPng ?? Buffer.alloc(0);
+    return this.page.screenshot({ type: "png", fullPage: opts.fullPage ?? false });
+  }
+
+  async readValue(locator: Locator): Promise<string | null> {
+    const r = await resolveLocator(this.page, locator);
+    if (!r?.pw) return null;
+    return r.pw.inputValue({ timeout: 2000 }).catch(() => null);
+  }
+
+  async setCookie(url: string, name: string, value: string): Promise<void> {
+    if (!this.browser) await this.launch();
+    await this.context.addCookies([{ name, value, url }]);
+  }
+
+  async reload(frame?: string[]): Promise<void> {
+    const f = findFrame(this.page, frame);
+    if (f && f !== this.page.mainFrame()) {
+      const url = f.url();
+      await f.goto(url, { waitUntil: "commit" }).catch(() => {});
+    } else {
+      await this.page.reload({ waitUntil: "commit" }).catch(() => {});
+    }
+    await this.waitForLoadOrDialog(8000);
+    await this.settle();
   }
 
   frameUrl(frame?: string[]): string | undefined {
+    if (!this.page) return undefined;
     return findFrame(this.page, frame)?.url();
   }
 
@@ -316,7 +341,8 @@ export class PlaywrightSurface implements Surface {
     if (this.dialog) return false;
     const frames = frame ? [findFrame(this.page, frame)].filter((f): f is Frame => Boolean(f)) : allFrames(this.page);
     for (const f of frames) {
-      const loc = f.getByRole(role as Parameters<Frame["getByRole"]>[0], { name, exact });
+      // "text" landmarks come from StaticText nodes (headers, captions) and are matched by visible text
+      const loc = role === "text" ? f.getByText(name, { exact }) : f.getByRole(role as Parameters<Frame["getByRole"]>[0], { name, exact });
       const n = await loc.count().catch(() => 0);
       for (let i = 0; i < Math.min(n, 10); i += 1) if (await loc.nth(i).isVisible().catch(() => false)) return true;
     }

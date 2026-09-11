@@ -8,7 +8,7 @@
  *   recorder/    action trace -> Capability artifact                                   (005) done
  *   evidence/    run folders, events.jsonl, screenshots, redactor                      (005) done
  *   policy/      basic allowlist + risk; full policy.yaml in 009                       (005/009)
- *   replay/      executor, resolver, detectors, recovery                               (006)
+ *   replay/      preflight, executor, assertions, signatures, detectors, recovery      (006) done
  *   session/     controller state machine, leases                                      (007)
  *   escalation/  InterventionRequest, handoff, resume                                  (007)
  *   server/      HTTP + WebSocket API                                                  (007)
@@ -21,3 +21,4 @@ export * from "./agent/index.js";
 export * from "./recorder/index.js";
 export * from "./evidence/index.js";
 export * from "./policy/index.js";
+export * from "./replay/index.js";

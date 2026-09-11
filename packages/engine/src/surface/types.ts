@@ -91,6 +91,12 @@ export interface Surface {
   captureLocator(elementIndex: number): Promise<Locator>;
   /** Read text at a locator (for extraction). */
   readText(locator: Locator): Promise<TextReadResult | null>;
+  /** Read a form control's current value at a locator (for valueEquals). */
+  readValue(locator: Locator): Promise<string | null>;
+  /** Set a cookie in the automation session (demo fault injection, session seeding). */
+  setCookie(url: string, name: string, value: string): Promise<void>;
+  /** Reload the current page (or the frame at the path). */
+  reload(frame?: string[]): Promise<void>;
   /** Re-read a value deterministically by extraction candidate; null when the strategy finds nothing. */
   extract(candidate: ExtractionCandidate, defaultFrame?: string[]): Promise<string | null>;
   /** Visible text of a frame (or the whole page when path is undefined). */
@@ -99,7 +105,7 @@ export interface Surface {
   landmarkVisible(role: string, name: string, frame?: string[], exact?: boolean): Promise<boolean>;
   frameUrl(frame?: string[]): string | undefined;
   pendingDialog(): DialogInfo | undefined;
-  screenshot(): Promise<Buffer>;
+  screenshot(opts?: { fullPage?: boolean }): Promise<Buffer>;
   /** Fires when the page opens a new window/tab. */
   onPageSwitch(handler: (url: string) => "adopt" | "close"): void;
   close(): Promise<void>;

@@ -118,11 +118,105 @@ the artifact's own policy, `optional` steps that would fail instead of skip.
 
 ## 3. Determinism & error handling
 
-_Filled in with slice 006. Design intent is in `openspec/changes/006-deterministic-replay/design.md`._
+Replay runs the artifact and nothing else. There is no model in the process, no network call to
+Anthropic, and no prompt. The test suite asserts this negatively: a successful replay's event log
+must not contain a single `decide` event. That is the property the whole design exists to buy —
+the same run costs nothing, takes seconds instead of a minute, and produces the same answer.
 
-Already in place from slice 004: condition-based waits (no sleeps except a 150ms settle),
-per-frame re-resolution on every step, exactly-one-visible-match resolution with proximity
-disambiguation, and dialogs surfaced as state rather than auto-dismissed.
+### What a step is
+
+Each step is six phases, in order: **precondition → risk gate → act → wait → expect → detect**.
+
+The precondition is a screen signature, not a locator: a URL pattern plus N of M landmarks. It
+answers "am I on the right screen" before asking "where is the button", so a flow that drifts one
+screen off course fails with `WRONG_SCREEN` naming what it expected and what it saw, rather than
+with a locator miss two steps later that looks like a broken selector.
+
+The wait is condition-based. There is no `sleep` in the replay path. A step declares what it is
+waiting for — a URL change, a landmark, a network idle — and the executor polls for it.
+
+The expect phase is what makes a step *verified* rather than merely *performed*. A click that
+succeeds mechanically but does not produce the expected screen is a failure, not a success, and
+this is the difference between an automation that reports what it did and one that reports what
+happened.
+
+The detect phase runs only when a step cannot prove itself: when it has no assertions, or when one
+failed. Classifying the screen after every successful step would double the accessibility-tree
+traffic for no information.
+
+### Three kinds of wrong
+
+The error taxonomy is the substance of this slice, and it is written up in full in
+[`docs/error-taxonomy.md`](docs/error-taxonomy.md). The core claim is that "it failed" is three
+different statements that need three different readers.
+
+A **business outcome** is the application giving a legitimate answer that is not the happy path.
+"No member found" is data. It exits 0, carries a typed code, and the caller branches on it. An
+automation that reports this as an error will be retried forever against an app that will never
+change its mind, and — worse — a human will be paged for it.
+
+A **recoverable condition** is a known, bounded deviation with a known fix: a session that expired,
+a maintenance alert, a 500 page. The engine applies the declared recovery within a declared budget
+and continues. Recoveries are never silent; they appear in `result.recoveries` and in the evidence
+log, so a capability that quietly recovers on most runs is visible as degradation rather than
+invisible as success.
+
+A **hard failure** is everything else. It stops the run, exits 2, and writes a failure bundle: a
+viewport screenshot, a full-page screenshot, an accessibility snapshot, the visible text, and a
+markdown narrative naming the expected state, the observed state, and a suggested next action.
+Debugging a failed replay should not require re-running it.
+
+Crucially, all three are *artifact data*, not engine constants. A new tenant adds its own outcome
+codes and detectors without touching a line of TypeScript.
+
+### Two rules that took the longest to get right
+
+**A recovery cannot be triggered by the screen it exists to reach.** The `SESSION_EXPIRED` detector
+is "the URL is /login". But /login is also where the login prelude legitimately *starts*. The first
+implementation therefore restarted the login prelude on its own first step, forever, and every test
+in the suite died with `RECOVERY_LOOP` at `step:open-app`. The fix is not to weaken the detector but
+to scope it: while a prelude is running, its own recovery is inert **for precondition checks** and
+live **for postconditions**. Seeing the sign-in screen before typing credentials is the expected
+starting state. Seeing it after submitting them means the sign-in did not stick, which is exactly
+the condition the recovery is for. The distinction is between "where am I" and "did that work".
+
+**A flow cannot be restarted after it has committed something.** Re-running a login prelude is free.
+Re-running a flow that has already clicked "Open Account" is not. When a recoverable condition
+appears after a point of no return, the run stops with its own code, `UNSAFE_RESTART`, rather than
+replaying a committed action. This is deliberately *not* folded into `RECOVERY_LOOP`: the recovery
+was sound, the restart was not, and a taxonomy that collapses those two tells the reader nothing.
+
+### Side effects are a first-class field
+
+Every result carries `sideEffects: none | possible | committed`. `possible` is the one that matters:
+a point-of-no-return step ran, but its confirmation was never observed, so the automation genuinely
+does not know whether the account was opened. Saying so is more useful than guessing either way, and
+it is the field a caller must read before retrying anything. The failure narrative escalates its own
+advice accordingly — "safe to retry" becomes "a human must check the account first".
+
+### Edge cases covered beyond the brief
+
+- **Pre-flight before the browser opens.** Bad parameters, missing secrets, an unapproved artifact,
+  or origins exceeding the global policy all fail with `stepsRun: 0`, which proves nothing touched
+  the target app. A bad call costs milliseconds, not a Chromium session.
+- **A run lock.** The same capability cannot run twice concurrently. On a flow that opens accounts,
+  double submission is the expensive bug.
+- **Bounded everything.** Retries, recoveries per outcome, restarts per sequence, per-step timeout,
+  and a whole-run deadline. Per-step assertion windows are clamped to the *remaining* run budget, so
+  three retries of a long-timeout step cannot quietly overshoot the deadline.
+- **Failure evidence is itself time-boxed.** Collecting the bundle races a short budget, because the
+  page may be mid-navigation or already torn down when we get there, and Playwright's own defaults
+  would otherwise stall a run for tens of seconds *after* it has already failed. A cancelled run
+  skips the full-page screenshot entirely: it is not a mystery that needs debugging.
+- **Drift without failure.** When a non-primary locator candidate matches, the run still succeeds but
+  records which strategy was recorded and which actually matched. This is the early-warning signal
+  for a UI change, visible before anything breaks.
+- **Plan mode.** `cua replay --plan` prints the full step plan, risk flags, points of no return and
+  fallback chains without opening a browser. A reviewer can audit what a capability would do before
+  ever letting it run.
+- **Parameterisation is real.** The same artifact, unchanged, returns a different member's balance
+  by changing one parameter. The suite asserts both, and asserts that the parameter value appears
+  nowhere in the artifact or the event log.
 
 ## 4. Heterogeneity & multi-tenant
 

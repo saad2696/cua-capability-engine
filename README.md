@@ -23,7 +23,7 @@ Slice-by-slice build. See [openspec/ROADMAP.md](./openspec/ROADMAP.md) for what 
 | 003 | Capability artifact schema | done |
 | 004 | Surface abstraction and perception | done |
 | 005 | LLM discovery loop and recorder | done |
-| 006 | Deterministic replay | planned |
+| 006 | Deterministic replay | done |
 | 007 | Session control and escalation | planned |
 | 008 | Operator console | planned |
 | 009 | Policy guardrails | planned |
@@ -121,10 +121,61 @@ pnpm cua discover \
   --evidence-name discovery-g1-savings-balance
 #    -> artifacts/member-savings-balance@1.json, evidence/discovery-g1-savings-balance/
 
-# 3. deterministic replay (slice 006)      pnpm cua replay artifacts/member-savings-balance@1.json --param memberId=10042
-# 4. business outcome (slice 006)          pnpm cua replay ... --param memberId=99999   -> MEMBER_NOT_FOUND
-# 5. escalation + human takeover (007/008) pnpm cua serve && pnpm dev:console
+# 3. deterministic replay: no model, no network, same answer
+pnpm cua replay artifacts/member-savings-balance@2.json --param memberId=10042 --allow-draft
+#    -> SUCCESS  outputs: {"savingsBalance":{"amount":1234.56,"currency":"USD"}}   exit 0
+
+# 4. the same artifact, a different member — parameters are real
+pnpm cua replay artifacts/member-savings-balance@2.json --param memberId=10077 --allow-draft
+
+# 5. escalation + human takeover (slices 007/008)
+pnpm cua serve && pnpm dev:console
 ```
+
+### Replay, and what it does when things go wrong
+
+Every run ends in one of four states. Exit codes let a caller branch without parsing anything:
+`0` success, `0` business outcome, `2` failure, `3` escalated.
+
+```bash
+# a legitimate "no" from the application — data, not an error (exit 0)
+pnpm cua replay artifacts/member-savings-balance@2.json --param memberId=99999 --allow-draft
+#    -> BUSINESS_OUTCOME MEMBER_NOT_FOUND
+
+# the session expires mid-flow: the engine re-runs the login prelude and finishes (exit 0)
+pnpm cua replay ... --param memberId=10042 --allow-draft --fault session_expired
+#    -> SUCCESS   recoveries: SESSION_EXPIRED via prelude:login
+
+# the same condition, but it never clears: bounded, then reported (exit 2)
+pnpm cua replay ... --param memberId=10042 --allow-draft --fault session_expired:sticky
+#    -> FAILURE RECOVERY_LOOP at step:click-button-sign-in
+
+# an undeclared dialog blocks the run (exit 3, escalates as the outcome catalog declares)
+pnpm cua replay ... --param memberId=10042 --allow-draft --fault unexpected_dialog
+```
+
+`--fault <name>[:sticky]` arms the mock app's fault injector for the run, so every branch above is
+reproducible on a laptop. The faults are `not_found`, `validation`, `permission_denied`,
+`session_expired`, `unexpected_dialog`, `slow`, and `server_error`.
+
+Every failure writes a bundle to `evidence/<run>/`: a viewport screenshot, a full-page screenshot,
+an accessibility snapshot, the visible text, and a markdown narrative naming the expected state, the
+observed state, and the suggested next action. Read
+[docs/error-taxonomy.md](./docs/error-taxonomy.md) for the full list.
+
+### Audit a capability before letting it run
+
+```bash
+pnpm cua replay artifacts/member-savings-balance@2.json --plan
+```
+
+`--plan` opens no browser. It prints the inputs, outputs, required secrets, allowed origins, every
+step with its intent, precondition, expectations and fallback locator chain, plus risk flags and
+points of no return. A reviewer can see exactly what a capability would do before approving it.
+
+Other flags: `--headed` to watch, `--json` for machine output, `--resume-from <n>` to start the main
+flow partway through, `--escalate-on-failure` to hand a failure to a human instead of exiting,
+`--timeout <ms>` for the whole-run budget.
 
 Add `--headed` to watch the browser. Goals name parameters as `{memberId}`; the model types
 placeholders and the engine substitutes values, so parameter and secret values never reach the
@@ -203,4 +254,4 @@ redacted; see slice 009 and REPORT.md § Safety.
 - [openspec/project.md](./openspec/project.md) — decisions and conventions
 - [openspec/ROADMAP.md](./openspec/ROADMAP.md) — build order
 - [docs/artifact-schema.md](./docs/artifact-schema.md) — the capability artifact, field by field, with rationale
-- `docs/error-taxonomy.md` — arrives with slice 006
+- [docs/error-taxonomy.md](./docs/error-taxonomy.md) — the four run outcomes and every failure code, with what to do about each
