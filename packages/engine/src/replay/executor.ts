@@ -89,6 +89,8 @@ interface RunState {
   deadline: number;
   /** Name of the prelude currently executing, if any (suppresses that prelude's own recovery). */
   activePrelude: string | undefined;
+  /** Wall time the run spent blocked on a person. Excluded from the run budget, reported on the result. */
+  pausedMs: number;
   lastScreenshot?: string;
 }
 
@@ -150,9 +152,8 @@ export async function replay(opts: ReplayOptions): Promise<ReplayResult> {
   const cap = pre.capability;
   const state: RunState = {
     cap, ctx: { params: opts.params, secrets: opts.secrets }, outputs: {}, sideEffects: "none", drift: [], recoveries: [], recoveryCounts: new Map(),
-    stepsRun: 0, startedAt, deadline: t0 + (opts.runTimeoutMs ?? 300_000), activePrelude: undefined,
+    stepsRun: 0, startedAt, deadline: t0 + (opts.runTimeoutMs ?? 300_000), activePrelude: undefined, pausedMs: 0,
   };
-  RUNNING.add(pre.lockKey);
   evidence.event({ type: "run_started", mode: "replay", capabilityId: cap.capability.id });
   log(`replay ${cap.capability.id}@${cap.capability.version} (${cap.capability.status})`);
 
@@ -231,6 +232,26 @@ export async function replay(opts: ReplayOptions): Promise<ReplayResult> {
     throw new Stop({ status: "business_outcome", code: o.code, message: o.message, ...(step ? { atStep: step.id } : {}), outputs: state.outputs, ...common(state) });
   };
 
+  /**
+   * Run whatever blocks on a person, and give the run back the wall time it spent waiting.
+   *
+   * The run budget exists to catch a hung application, not a thinking operator. An intervention can
+   * legitimately last fifteen minutes against a five-minute budget, and without this every real
+   * handover would come back to a run that had already timed out — or, worse, to per-step assertion
+   * windows clamped to a negative remainder and floored at 500ms, failing on screens that were fine.
+   */
+  const awaitHuman = async <T,>(what: string, fn: () => Promise<T>): Promise<T> => {
+    const t = Date.now();
+    try {
+      return await fn();
+    } finally {
+      const paused = Date.now() - t;
+      state.deadline += paused;
+      state.pausedMs += paused;
+      if (paused > 1000) log(`  resumed after ${Math.round(paused / 1000)}s of ${what}`);
+    }
+  };
+
   const escalate = async (reason: EscalationReason, step: Step | undefined, stepIndex: number, detail: string): Promise<"same" | "next" | "abort"> => {
     const id = `intervention-${randomUUID().slice(0, 8)}`;
     let screenshot: string | undefined;
@@ -241,7 +262,7 @@ export async function replay(opts: ReplayOptions): Promise<ReplayResult> {
     }
     evidence.event({ type: "escalate", ...(step ? { stepId: step.id } : {}), stepIndex, interventionId: id, reason, detail, ...(screenshot ? { screenshot } : {}) });
     if (!opts.onEscalate) throw new Stop({ status: "escalated", interventionId: id, reason, ...(step ? { atStep: step.id } : {}), detail, ...common(state) });
-    const decision = await opts.onEscalate({ interventionId: id, reason, ...(step ? { stepId: step.id } : {}), stepIndex, detail, ...(screenshot ? { screenshot } : {}) });
+    const decision = await awaitHuman("human intervention", () => opts.onEscalate!({ interventionId: id, reason, ...(step ? { stepId: step.id } : {}), stepIndex, detail, ...(screenshot ? { screenshot } : {}) }));
     evidence.event({ type: "resume", ...(step ? { stepId: step.id } : {}), resumeAt: decision });
     if (decision === "abort") throw new Stop({ status: "escalated", interventionId: id, reason, ...(step ? { atStep: step.id } : {}), detail: `${detail} (aborted by operator)`, ...common(state) });
     return decision;
@@ -365,8 +386,10 @@ export async function replay(opts: ReplayOptions): Promise<ReplayResult> {
   // ---- one step ----
   const runStep = async (step: Step, index: number, phase: Phase, attempt = 1): Promise<void> => {
     if (opts.signal?.aborted) await fail("CANCELLED", step, "run to continue", "cancelled by caller");
+    // Ask the controller before testing the clock. shouldContinue is where a manual pause blocks, so
+    // checking the deadline first would time out the run on the step right after it resumed.
+    if (opts.shouldContinue && (await awaitHuman("pause", () => opts.shouldContinue!())) === "abort") await fail("CANCELLED", step, "run to continue", "aborted by session controller");
     if (Date.now() > state.deadline) await fail("RUN_TIMEOUT", step, `run within ${opts.runTimeoutMs ?? 300_000}ms`, "run budget exhausted");
-    if (opts.shouldContinue && (await opts.shouldContinue()) === "abort") await fail("CANCELLED", step, "run to continue", "aborted by session controller");
     const frame = step.target?.frame ?? step.precondition?.frames;
     const label = `${phase}:${step.id}`;
     log(`${label} ${step.action}${step.target ? ` ${step.target.candidates[0]?.strategy}` : ""}${step.value ? ` ${describeValue(step.value)}` : ""}`);
@@ -402,7 +425,7 @@ export async function replay(opts: ReplayOptions): Promise<ReplayResult> {
       const mode = opts.riskyStepsRequire ?? "approvedArtifact";
       let allowed = false;
       if (mode === "approvedArtifact") allowed = cap.capability.status === "approved";
-      else if (mode === "humanConfirm") allowed = opts.confirmRisky ? await opts.confirmRisky(step) : false;
+      else if (mode === "humanConfirm") allowed = opts.confirmRisky ? await awaitHuman("risk confirmation", () => opts.confirmRisky!(step)) : false;
       if (!allowed) {
         if (mode === "block") await fail("POLICY_VIOLATION", step, "no risky steps (policy: block)", `${step.id} is risky`);
         const decision = await escalate("RISKY_STEP_NEEDS_APPROVAL", step, index, `${step.intent} (${step.action} on ${step.target?.candidates[0] ? JSON.stringify(step.target.candidates[0]) : "?"})`);
@@ -533,6 +556,10 @@ export async function replay(opts: ReplayOptions): Promise<ReplayResult> {
   };
 
   // ---- run ----
+  // Acquired here rather than beside the pre-flight check so that nothing can run between taking
+  // the lock and the `finally` that releases it. There is no `await` between the check and this
+  // line, so the window the check guards is still closed.
+  RUNNING.add(pre.lockKey);
   try {
     for (const c of opts.cookies ?? []) await surface.setCookie(c.url, c.name, c.value);
     const startIndex = opts.startAtStepIndex ?? 0;

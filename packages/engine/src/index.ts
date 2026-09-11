@@ -22,3 +22,4 @@ export * from "./recorder/index.js";
 export * from "./evidence/index.js";
 export * from "./policy/index.js";
 export * from "./replay/index.js";
+export * from "./session/index.js";
