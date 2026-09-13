@@ -10,7 +10,12 @@ import { useMemo } from "react";
 
 const ICON = { passed: "✓", failed: "✗", recovered: "↻", running: "•", pending: "·" };
 
-function buildSteps(events) {
+/**
+ * The run's steps, derived entirely from its event stream rather than from a second source of
+ * truth: each step's verdict is whatever its own events said. Exported for its own tests, because
+ * this is the part of the console that changes when the engine's event shape does.
+ */
+export function buildSteps(events) {
   const order = [];
   const byId = new Map();
   const touch = (id, phase) => {

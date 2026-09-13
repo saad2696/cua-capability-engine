@@ -390,6 +390,62 @@ different origin is a different tenant, which is the overlay mechanism in the he
 not a free-text field. Discovery is the opposite case and takes any allowlisted URL, because
 discovery is how an artifact learns what origin it belongs to in the first place.
 
+### The console is a client, not the system
+
+`apps/operator-console` is React and plain JavaScript on Vite, and it deliberately contains no
+engine logic. It cannot take control, resolve an intervention, or decide what a run does next; each
+of those is a request to the server, which owns the state machine. The test of that claim is that
+`scripts/demo-handover.mjs` drives the identical flow with no UI at all — if the console held any
+authority of its own, the two would be able to contradict each other.
+
+The one thing the console is opinionated about is colour. Controller identity is carried by the
+viewport border and the same three colours everywhere: green for replay, blue for the model, amber
+for a human. Nothing else in the interface uses them. The single most dangerous confusion in a
+shared session is believing you have control when you do not.
+
+### What it took to make the system watchable
+
+Building the console exposed something the engine work had not: a correct system is not
+automatically a legible one. A read-only replay finishes in about two seconds and its only visible
+output is a number. Four changes came out of that, and none of them are cosmetic.
+
+Frames now stream while the engine drives, not only while a run is stopped. The earlier design
+deliberately streamed only in `paused` and `human_control`, reasoning that a stream during a run
+would contend with the engine's own observations for the same connection and show a blur nobody was
+acting on. That reasoning was sound about cost and wrong about value: watching the automation work
+is most of what makes it trustworthy to a person. The cadence now varies by controller — an operator
+who has taken control needs their clicks to feel immediate, an observer only needs to follow along.
+
+Each step's screenshot, already saved for evidence, is announced as an event. So a console gets a
+frame per step at no cost to the browser at all, and those frames are literally the pictures the
+engine acted on rather than an approximation taken alongside.
+
+A **pace** control puts a deliberate wait between steps. It changes nothing about what a run does,
+and the wait is excluded from the run's budget for the same reason a human pause is. Calling it
+what it is — a presentation control — seemed better than pretending a two-second run is followable.
+
+**Stop before the first step** parks a run with the application already open. Without it the
+takeover path was reachable only by racing a two-second run, and the first version of it stopped
+*before* the browser existed, leaving an operator looking at an empty viewport wondering what broke.
+
+### Three bugs the console found in the engine
+
+A **manual pause revoked the lease immediately**, so the engine could not finish the step it was
+already in — and when the pause was raised before a run's first step, could not even open the page.
+A pause is now a request to stop at the next safe point: control stays with the engine until it
+reaches its next between-steps check, and only then does the state become `paused`.
+
+A **modal dialog raised during an action froze the engine** rather than escalating. A native alert
+blocks the page, so a Playwright action already in flight never settles and the caller waits for a
+click that can no longer happen. Actions now race against dialog appearance, which turns an
+indefinite hang into "the dialog is why" — something the executor can classify. A step-level timeout
+backs it up for anything the surface cannot see. Legacy applications raise these on interaction
+rather than on load, so this was not an exotic case; it was the main one.
+
+A **streamed frame could catch the numbered marks half-drawn**. `observe` injects marks, photographs
+the page, then removes them, and a frame captured mid-window showed an application that looked
+broken. Anything that photographs the page now waits its turn.
+
 ### Sandbox controls for the demo
 
 `POST /runs/:id/scenario` arms one of the mock application's faults inside the *running* browser, so
@@ -401,6 +457,15 @@ Running the demo with a session expiry injected mid-pause shows the whole loop: 
 approval, a human approves, the injected expiry fires, the engine re-authenticates and restarts the
 flow, and the restarted flow correctly asks for approval a *second* time — because a risky step that
 runs twice must be approved twice.
+
+The panel needed one fault it could not recover from. Every seeded fault demonstrates recovery —
+a session expiry re-authenticates, a server error reloads, a known dialog is dismissed — which
+collectively make the same point twice and never show the engine deciding to stop. `blocking_dialog`
+raises an *undeclared* error on the next interaction, worded like a real integration failure. The
+engine classifies it as `UNKNOWN_DIALOG`, refuses to guess, and hands over the browser; the operator
+clears the dialog in the live view and hands back, and the run finishes in the session it stopped
+in. That is the whole thesis of the escalation design in one button, and it is the one entry in the
+panel drawn differently, because it means something different.
 
 ## 6. Safety
 

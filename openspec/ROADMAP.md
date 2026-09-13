@@ -13,7 +13,7 @@ after any of them and document the rest as next steps in REPORT.md § Cuts.
 | 005 | discovery-agent-loop | 003, 004 | 3.1, 3.2, 3.5 | done |
 | 006 | deterministic-replay | 003, 004 | 3.3, 3.5 | done |
 | 007 | session-control-and-escalation | 005, 006 | 3.6 | done |
-| 008 | operator-console | 007 | 3.6 | planned |
+| 008 | operator-console | 007 | 3.6 | done |
 | 009 | policy-guardrails | 005, 006 | 3.4 | planned |
 | 010 | evidence-and-deliverables | all core | 6 | planned |
 | 011 | capability-catalog-api (stretch) | 007, 009 | 8 | optional |

@@ -25,7 +25,7 @@ Slice-by-slice build. See [openspec/ROADMAP.md](./openspec/ROADMAP.md) for what 
 | 005 | LLM discovery loop and recorder | done |
 | 006 | Deterministic replay | done |
 | 007 | Session control and escalation | done |
-| 008 | Operator console | planned |
+| 008 | Operator console | done |
 | 009 | Policy guardrails | planned |
 | 010 | Evidence, README, REPORT | planned |
 
@@ -131,6 +131,63 @@ pnpm cua replay artifacts/member-savings-balance@2.json --param memberId=10077 -
 # 5. the control plane: runs, live events, interventions, take-control
 pnpm cua serve
 ```
+
+## The operator console
+
+```bash
+pnpm demo            # the mock bank, the engine, and the console, on one command
+```
+
+Then open <http://localhost:4300>. Add `--headed` to also watch the real Chromium window.
+
+The console owns no engine logic. It cannot take control, resolve an intervention, or decide what a
+run does next — every action is a request to the server, which owns the state machine. That is why
+the headless script above and this UI can drive the same run without either being the authority.
+
+**Start** is the entry gate. Replay a recorded capability, or discover a new one with a model.
+Replay offers only the origins the artifact was recorded against, because pointing a recorded flow
+at a different origin is exactly what its policy exists to prevent; discovery takes any allowlisted
+URL, because discovery is how a capability finds its application in the first place.
+
+**The live session** puts the application and what is being done to it side by side. The viewport
+border says who is driving: green for replay, blue for the model, amber for you. Frames stream from
+the automation's own browser, faster while you hold control than while you are only watching.
+
+Two controls make a replay watchable, because it otherwise finishes in about two seconds:
+
+- **Pace** puts a beat between steps. It changes nothing about what the run does, and the wait is
+  excluded from the run's own time budget.
+- **Stop before the first step** parks the run with the application already open, so taking control
+  is not a race. It is also the cautious way to run a capability for the first time.
+
+**Break something** arms a fault inside the running browser, so the flow hits it on its next
+request. Most of them the engine handles by itself. One — "Undeclared error on the next click" — it
+cannot, so it stops and hands you the browser.
+
+**Evidence** lists what the run wrote. Screenshots step through in order, so you can see every
+screen the engine acted on.
+
+**Capabilities** renders an artifact for review: its contract, every step with its locator fallbacks
+and risk flags, and the outcomes it knows how to handle. Approving one is what allows it to replay
+unattended.
+
+Approving a capability is part of the demo, not a setup step: `member-savings-balance@2` ships as a
+draft, so unattended replay refuses it until somebody approves it on the Capabilities page.
+
+### Demo path, in order
+
+| Do this | It shows |
+| --- | --- |
+| Replay `member-savings-balance@2` for member `10042` | Deterministic replay. Seven steps, no model, about two seconds. |
+| Replay it for `10077` | The same artifact returns $8,900.04. Parameters are real, not baked in. |
+| Replay for `99999` | A business outcome, `MEMBER_NOT_FOUND`, exit 0. Not an error. |
+| Replay with "Session expired" | The engine notices and re-runs the login prelude by itself. |
+| Replay with "Undeclared error on the next click" | It stops, names what it saw, and asks for a person. |
+| Take control, dismiss the dialog, hand back | The run finishes in the session it paused in. |
+| Discover with the scripted model | An artifact being recorded, values becoming references. |
+
+The synthetic members are `10042` (Alex Sample, Savings $1,234.56), `10077` ($8,900.04), `10101`
+($45,000.00), `10233` (restricted, $0.00) and `10999`. `99999` does not exist.
 
 ### Escalation: a human takes over the same live session
 

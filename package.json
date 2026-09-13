@@ -10,7 +10,7 @@
   },
   "scripts": {
     "build": "pnpm -r --filter './packages/**' --filter './apps/**' build",
-    "test": "vitest run",
+    "test": "vitest run && pnpm --filter @cua/operator-console test",
     "test:watch": "vitest",
     "lint": "eslint .",
     "typecheck": "pnpm -r --filter './packages/**' --filter './apps/cli' --filter './apps/target-app' typecheck",

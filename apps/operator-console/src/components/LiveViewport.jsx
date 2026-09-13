@@ -16,6 +16,19 @@ const CONTROLLER_LABEL = {
   human: "you are driving",
 };
 
+/**
+ * CSS pixels within the rendered image → page pixels in the live browser.
+ *
+ * Exported and pure so it can be tested directly. The image is rendered at whatever width the
+ * layout gives it, so a click at CSS pixel x means page pixel x * (natural width / rendered width).
+ * `naturalWidth` is 0 until the first frame arrives; scaling by zero would send every click to the
+ * origin, so an unloaded image maps one to one instead.
+ */
+export function toPageCoordinates(point, rect, naturalWidth) {
+  const scale = naturalWidth && rect.width ? naturalWidth / rect.width : 1;
+  return { x: Math.round((point.clientX - rect.left) * scale), y: Math.round((point.clientY - rect.top) * scale) };
+}
+
 export default function LiveViewport({ frame, controller, controlled, onInput, dialog, stepFrame, connected }) {
   const imgRef = useRef(null);
   // Prefer the live stream. When it has not produced a frame yet, fall back to the screenshot the
@@ -24,13 +37,10 @@ export default function LiveViewport({ frame, controller, controlled, onInput, d
   const src = frame?.png ? `data:image/png;base64,${frame.png}` : stepFrame?.src;
   const label = frame?.png ? "live" : stepFrame ? `step ${stepFrame.stepId?.replace("step:", "") ?? ""}` : "";
 
-  /** CSS pixels within the rendered image → page pixels in the live browser. */
   const toPage = useCallback((e) => {
     const img = imgRef.current;
     if (!img) return null;
-    const rect = img.getBoundingClientRect();
-    const scale = img.naturalWidth ? img.naturalWidth / rect.width : 1;
-    return { x: Math.round((e.clientX - rect.left) * scale), y: Math.round((e.clientY - rect.top) * scale) };
+    return toPageCoordinates(e, img.getBoundingClientRect(), img.naturalWidth);
   }, []);
 
   const handleClick = (e) => {
