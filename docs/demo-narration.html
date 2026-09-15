@@ -1,17 +1,20 @@
 <!doctype html>
 <meta charset="utf-8">
-<title>CUA Capability Engine — demo narration and decision notes</title>
+<title>CUA Capability Engine — how I built it, and the walkthrough</title>
 <style>
-  @page { size: A4; margin: 18mm 16mm; }
+  @page { size: A4; margin: 17mm 15mm; }
   :root { --ink:#16181d; --mute:#5b6270; --rule:#d9dde5; --accent:#1c4f9c; --warn:#8a5300; --code:#f4f6fa; }
   * { box-sizing: border-box; }
-  body { font: 10.5pt/1.55 -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; color: var(--ink); max-width: 820px; margin: 0 auto; padding: 24px; background:#fff; }
+  body { font: 10.5pt/1.55 -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; color: var(--ink); max-width: 840px; margin: 0 auto; padding: 24px; background:#fff; }
   h1 { font-size: 21pt; margin: 0 0 4px; letter-spacing: -0.3px; }
-  h2 { font-size: 14pt; margin: 26px 0 8px; padding-top: 10px; border-top: 2px solid var(--ink); page-break-after: avoid; }
-  h3 { font-size: 11.5pt; margin: 18px 0 5px; color: var(--accent); page-break-after: avoid; }
-  h4 { font-size: 10.5pt; margin: 13px 0 4px; page-break-after: avoid; }
+  h2 { font-size: 15pt; margin: 0 0 10px; padding: 7px 0 7px 12px; border-left: 5px solid var(--accent); background:#eef2f9; page-break-after: avoid; }
+  h3 { font-size: 11.5pt; margin: 17px 0 5px; color: var(--accent); page-break-after: avoid; }
+  h4 { font-size: 10.5pt; margin: 13px 0 3px; page-break-after: avoid; }
+  .step { page-break-before: always; padding-top: 2px; }
+  .step:first-of-type { page-break-before: avoid; }
+  .stepno { font-size: 8.5pt; letter-spacing: .12em; text-transform: uppercase; color: var(--mute); display:block; margin-bottom:2px; }
   p, li { orphans: 3; widows: 3; }
-  .sub { color: var(--mute); margin: 0 0 18px; font-size: 10pt; }
+  .sub { color: var(--mute); margin: 0 0 16px; font-size: 10pt; }
   code, kbd { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 9pt; background: var(--code); padding: 1px 4px; border-radius: 3px; }
   pre { background: var(--code); border-left: 3px solid var(--accent); padding: 9px 11px; overflow-x: auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 8.6pt; line-height: 1.45; page-break-inside: avoid; margin: 8px 0; }
   pre code { background: none; padding: 0; font-size: inherit; }
@@ -21,350 +24,415 @@
   blockquote { margin: 9px 0; padding: 8px 12px; border-left: 3px solid var(--warn); background: #fdf8ef; font-style: italic; page-break-inside: avoid; }
   blockquote p { margin: 0; }
   .say::before { content: "SAY  "; font-style: normal; font-weight: 700; color: var(--warn); font-size: 8pt; letter-spacing: .08em; }
-  .do { background:#eef4ff; border-left:3px solid var(--accent); padding:8px 12px; margin:9px 0; page-break-inside: avoid; }
+  .do { background:#eef4ff; border-left:3px solid var(--accent); padding:8px 12px; margin:9px 0; page-break-inside: avoid; font-size: 9.6pt; }
   .do::before { content: "DO  "; font-weight: 700; color: var(--accent); font-size: 8pt; letter-spacing: .08em; }
   .note { font-size: 9.4pt; color: var(--mute); }
-  .act { page-break-before: always; }
   ul, ol { padding-left: 19px; margin: 6px 0; }
   li { margin: 2px 0; }
   .lede { font-size: 11pt; }
-  .tag { font-size: 8pt; text-transform: uppercase; letter-spacing: .07em; background:#e7ecf5; color:var(--accent); padding: 1px 6px; border-radius: 9px; }
+  .mermaid { text-align: center; margin: 10px 0 4px; page-break-inside: avoid; }
+  .mermaid svg { max-width: 100%; height: auto; }
+  .fallback { display:none; }
   @media print { body { padding: 0; } a { color: inherit; text-decoration: none; } }
 </style>
 
 <h1>Computer-Use Automation System</h1>
-<p class="sub">Demo narration, decision notes and Q&amp;A prep · interface.ai take-home · prepared 15 September 2026</p>
+<p class="sub">How I approached it, what I decided and why, what I covered — and the walkthrough · interface.ai take-home</p>
 
-<p class="lede">The system learns a task in a legacy UI once with an LLM, records what it learned as a
-typed, versioned <strong>capability artifact</strong>, and then replays that artifact
-deterministically with no model in the loop. Anything irreversible, or anything it has not seen
-before, stops and hands a person the same live browser session.</p>
+<p class="lede">An LLM works out how to do a task in a legacy banking UI <strong>once</strong>. What it
+learned is recorded as a typed, versioned <strong>capability artifact</strong>. That artifact then
+replays <strong>deterministically, with no model in the loop</strong>, in about two seconds. Anything
+irreversible — or anything the system has not seen before — stops and hands a person the same live
+browser session.</p>
 
-<p>This document is the running order for the walkthrough, plus the reasoning behind each design
-decision, so you can answer "why did you do it that way?" without hunting through code.</p>
+<!-- ───────────────────────────── STEP 1 ───────────────────────────── -->
+<section class="step">
+<h2><span class="stepno">Step 1</span>The problem in hand</h2>
 
-<h2>1 · The shape of the answer</h2>
-
-<p>Three things make this different from a Playwright script or from an agent that runs live every
-time:</p>
-
-<table>
-  <tr><th style="width:26%">Decision</th><th>Why, and what it buys</th></tr>
-  <tr><td><strong>Learn once, replay forever</strong></td><td>A model is slow, costs money and is non-deterministic. A recorded artifact replays in about two seconds with no API call at all. The model is a <em>compiler</em>, not a runtime.</td></tr>
-  <tr><td><strong>The artifact is a contract, not a transcript</strong></td><td>Typed inputs and outputs, preconditions, expectations, locator fallbacks, risk flags, and a catalog of outcomes it knows how to handle. A reviewer can approve or reject it without reading a log.</td></tr>
-  <tr><td><strong>Escalation is the same session</strong></td><td>When it gets stuck, a human takes over the automation's own browser — same cookies, same frames, same scroll position — and hands back mid-flow. Not a restart, not a copy.</td></tr>
-</table>
-
-<h3>Why a mock application rather than a real site</h3>
-<p>The interesting behaviour is what happens when things go <em>wrong</em>: session expiry, an
-undeclared dialog, a 500, a slow page, a permission refusal. Only an application you own can
-produce each of those on demand and repeatably. <strong>Legacy CU Core</strong> is a deliberately
-dated core-banking UI — framesets, table layouts, no test ids, a native <code>confirm()</code> at
-the point of no return — with synthetic data only, and a fault-injection seam the demo drives.</p>
-
-<h2>2 · What each capability does</h2>
+<p>The brief asks for an agent that can operate a legacy enterprise UI. The difficulty is not
+clicking buttons — Playwright does that. It is that the three things you want are in tension:</p>
 
 <table>
-  <tr><th style="width:22%">Capability</th><th style="width:30%">What it does</th><th>What it proves</th></tr>
-  <tr>
-    <td><code>member-savings-balance@2</code><br><span class="tag">read-only</span></td>
-    <td>Sign in, search a member, read the Savings balance out of the Accounts table.</td>
-    <td>The core loop. Seven steps, ~2s, no model. Run it for a second member and the answer changes — the parameter is real, not baked into the recording.</td>
-  </tr>
-  <tr>
-    <td><code>member-open-subaccount@1</code><br><span class="tag">commits</span></td>
-    <td>Open a new savings sub-account: fill the form, pass validation, confirm, and read back the confirmation number.</td>
-    <td>The guardrails. Two steps are marked <em>risky</em> and <em>point of no return</em>. Replaying it really opens an account; <code>sideEffects: committed</code>.</td>
-  </tr>
-  <tr>
-    <td><code>member-branch-and-tenure@1</code><br><span class="tag">learned live</span></td>
-    <td>Report which branch a member belongs to and the date they joined — two outputs, read from the Member Detail table.</td>
-    <td>That the system generalises. It is learned <strong>on camera</strong>, from a goal sentence, in about 25 seconds.</td>
-  </tr>
+  <tr><th style="width:23%">You want</th><th>But</th></tr>
+  <tr><td><strong>Flexibility</strong> — handle a UI nobody documented, with no API and no test ids</td><td>…which argues for an LLM driving the browser live.</td></tr>
+  <tr><td><strong>Determinism</strong> — the same input gives the same result, every time, auditably</td><td>…which argues against an LLM anywhere near the hot path.</td></tr>
+  <tr><td><strong>Safety</strong> — some actions move money and cannot be undone</td><td>…which argues for a human, but a human on every run is not automation.</td></tr>
 </table>
 
-<p class="note">Synthetic members: <code>10042</code> Alex Sample (Main Street, since 2014-03-11,
-Savings $1,234.56) · <code>10077</code> (Riverside, since 2018-09-30, $8,900.04) ·
-<code>10101</code> ($45,000.00) · <code>10233</code> restricted · <code>10999</code> ·
-<code>99999</code> does not exist.</p>
+<p>Running the model on every execution loses determinism, costs money per run, and leaves nothing
+to audit. Hand-writing scripts loses the flexibility that made the LLM worth having. So the central
+decision is <em>where the model sits</em>.</p>
 
-<h2 class="act">3 · Running order</h2>
-<p class="note">Roughly 14 minutes. If you need to cut, shorten Act 2 and keep Acts 5, 6 and 7 whole.</p>
+<blockquote class="say"><p>"My answer is that the model is a <strong>compiler, not a runtime</strong>.
+It runs once, at authoring time, under policy and with a human available. What it produces is an
+artifact a person can review and approve — and that artifact is what runs in production, with no
+model in it at all."</p></blockquote>
 
-<h3>Before you press record</h3>
-<pre><code># free the ports, or the engine dies silently behind a stale process
-lsof -ti:4100,4200,4300 | xargs kill -9 2>/dev/null
+<h3>Why I built the target application</h3>
+<p>The interesting behaviour is what happens when things go <em>wrong</em>: a session expires
+mid-flow, an undeclared dialog appears, the server 500s, a page is slow, the operator lacks
+permission. Only an application you control can produce each of those on demand and repeatably.</p>
+<p><strong>Legacy CU Core</strong> is a deliberately dated core-banking UI — framesets, table
+layouts, no test ids, a native <code>confirm()</code> at the point of no return — with synthetic
+data only and a fault-injection seam the demo drives. That last detail matters more than it looks:
+the <code>confirm()</code> turned out to be the hardest thing in the project, and I only found out
+why by running against it.</p>
+</section>
 
-pnpm cua doctor            # expect: 8 ok, 1 warning, 0 failures
-pnpm demo                  # target app + engine + console, Ctrl-C stops all three
+<!-- ───────────────────────────── STEP 2 ───────────────────────────── -->
+<section class="step">
+<h2><span class="stepno">Step 2</span>Framework decisions</h2>
 
-# reset the two pieces of state that drift between rehearsals
-#  1. G1 must be a DRAFT, or Act 3's refusal beat does not fire
-#  2. the live-learn capability must NOT exist yet
-rm -f artifacts/member-branch-and-tenure@1.json</code></pre>
-<p class="note">Restarting the target app resets the account numbering, so every rehearsal starts at
-<code>CU-700001</code>. Record the terminal window only — your <code>.env</code> holds a live API
-key.</p>
+<h3>The life of a capability</h3>
+<pre class="mermaid">
+flowchart LR
+  Goal["Goal sentence<br/>plain English"] --> Agent
+  Agent["Discovery loop<br/>observe → decide → act"] <-->|"tool calls"| LLM["Claude Sonnet 5<br/>the ONLY model edge"]
+  Agent --> Rec["Recorder<br/>prunes detours"]
+  Rec --> Art[("Capability artifact<br/>typed · versioned · draft")]
+  Art --> Review{"Human review"}
+  Review -->|"approve"| Replay["Replay executor<br/>NO model · ~2s"]
+  Review -->|"reject"| Bin["back to discovery"]
+  Replay --> Out["success · business_outcome<br/>failure · escalated"]
+  Replay -.->|"risky step or unknown state"| Op["Operator takes the<br/>SAME live session"]
+  Op -.->|"hand back"| Replay
+</pre>
+<p class="note">The whole argument in one picture: the model sits on a single edge, at authoring
+time. Everything to the right of the artifact runs without it.</p>
 
-<h3>Act 1 — the system being automated <span class="note">(60s)</span></h3>
-<div class="do">Open <code>localhost:4100</code>, sign in as <code>demo / demo</code>, search <code>10042</code>.</div>
-<blockquote class="say"><p>"This is the kind of core banking UI that still runs in production and
-that nobody is going to rewrite. Framesets, table layouts, no API, no test ids. The balance I want
-is in an unlabelled table cell. That constraint drives most of the design."</p></blockquote>
+<h3>Runtime components</h3>
+<pre class="mermaid">
+flowchart TB
+  Console["Operator console<br/>React + Vite"] -->|"HTTP + WebSocket"| Server["Engine server<br/>Express + ws"]
+  CLI["cua CLI"] --> Core
+  Server --> Core
 
-<h3>Act 2 — learning a task <span class="note">(90s)</span></h3>
-<div class="do"><code>pnpm cua discover --goal "Look up member {memberId} and read the current balance of their Savings account." --url http://localhost:4100/ --capability-id member-savings-balance --param memberId=10042</code></div>
-<blockquote class="say"><p>"The model never sees raw HTML. It sees an accessibility tree flattened
-across frames, plus a screenshot with the interactive elements numbered. <code>{memberId}</code> is
-a parameter, and the password is a reference to an environment variable — the literal value is
-substituted at the browser, after the model has decided, so a credential never reaches the
-model or the transcript."</p></blockquote>
-<div class="do"><code>pnpm cua artifact summary artifacts/member-savings-balance@1.json</code></div>
-<blockquote class="say"><p>"That is the output — not a transcript. A typed contract: inputs,
-outputs, every step with its locator fallbacks, what each step expects to be true afterwards, and
-the outcomes it knows how to handle."</p></blockquote>
+  subgraph Core["@cua/engine"]
+    direction LR
+    Agent["Discovery<br/>loop"]
+    Replay["Replay<br/>executor"]
+    Session["Session<br/>+ leases"]
+    Policy["Policy gate"]
+  end
 
-<h3>Act 3 — deterministic replay, and the approval gate <span class="note">(90s)</span></h3>
-<div class="do"><code>pnpm cua replay artifacts/member-savings-balance@2.json --param memberId=10042</code> → <code>FAILURE ARTIFACT_NOT_APPROVED</code>, exit 2, in 3ms without opening a browser.</div>
+  Core --> Surface["Surface interface<br/>perceive · act"]
+  Surface --> PW["PlaywrightSurface<br/>a11y tree + marks"]
+  PW --> Target["Legacy CU Core<br/>mock bank · framesets"]
+  Core --> Ev[("evidence/run/<br/>events · shots · bundle")]
+  Core --> Art[("artifacts/*.json")]
+
+  Policy -.->|"1 decision · 2 surface · 3 network · 4 pre-flight"| Surface
+</pre>
+<p class="note fallback">Diagram sources: <code>docs/diagrams/architecture.mmd</code> and <code>docs/diagrams/components.mmd</code>.</p>
+
+<h3>The decisions, and what each one buys</h3>
+<table>
+  <tr><th style="width:24%">Decision</th><th style="width:22%">Alternative I rejected</th><th>Why</th></tr>
+  <tr><td><strong>Learn once, replay forever</strong></td><td>Agent drives every run</td><td>~$0.07 and 25s becomes $0 and 2s, deterministic and auditable. The model's non-determinism is confined to authoring, where a human is already looking.</td></tr>
+  <tr><td><strong>Artifact is a contract</strong></td><td>A recorded action log</td><td>Typed inputs/outputs, preconditions, expectations, risk flags, outcome catalog. A reviewer can approve or reject without reading a transcript — which is what makes the approval gate meaningful.</td></tr>
+  <tr><td><strong>Surface interface</strong></td><td>Playwright calls throughout</td><td>One seam describing "perceive and act". A desktop surface on an OS accessibility API would implement the same interface; nothing in the artifact references Playwright.</td></tr>
+  <tr><td><strong>A11y tree + numbered screenshot</strong></td><td>Raw HTML in the prompt</td><td>Legacy HTML is enormous and mostly layout. The a11y tree is what an operator perceives, flattened across frames; the numbered marks let the model refer to elements by index.</td></tr>
+  <tr><td><strong>Multi-candidate locators</strong></td><td>One selector, or XPath</td><td>Role + name, then CSS, then visual position, tried in order. XPath encodes exactly the structure a redesign changes. Matching on a fallback emits a <em>drift</em> event: early warning, not failure.</td></tr>
+  <tr><td><strong>Screen signatures as preconditions</strong></td><td>URL equality</td><td>In a frameset the top URL barely changes. A step asserts a URL pattern plus <em>N of M</em> landmarks, so it refuses to run on the wrong screen rather than clicking blindly.</td></tr>
+  <tr><td><strong>Leases by wrapping</strong></td><td>Thread a token through <code>act()</code></td><td>Keeps control-plane concerns out of the perception contract — and revoking a lease disarms every reference at once, <em>including one captured before an await</em>.</td></tr>
+  <tr><td><strong>Policy as data</strong></td><td>Constants in code</td><td>One validated <code>policy.yaml</code> answers "what can this touch?" and "what changed?" by reading or diffing one file. Unknown keys are rejected: a misspelled control that silently enforces nothing is worse than a startup error.</td></tr>
+  <tr><td><strong>Secrets as references</strong></td><td>Values in the artifact</td><td>Substituted at the browser <em>after</em> the model decides, so a credential never reaches the model, the transcript or the artifact.</td></tr>
+</table>
+
+<h3>Stack</h3>
+<p class="note">pnpm workspace monorepo · TypeScript strict (engine, CLI, schema, mock app) · Zod
+schemas with inferred types for every contract · Playwright/Chromium with CDP for per-frame
+accessibility trees · Express 5 + <code>ws</code> for the control plane · React (JavaScript) + Vite
+for the console, hand-written router, no component library · Vitest, with everything
+integration-tested against the real mock app and a real browser.</p>
+</section>
+
+<!-- ───────────────────────────── STEP 3 ───────────────────────────── -->
+<section class="step">
+<h2><span class="stepno">Step 3</span>Cases considered</h2>
+
+<p>The design decision I am most confident about: <strong>every run ends in exactly one of four
+shapes, each with its own exit code.</strong> That is what lets a caller automate against the thing
+instead of parsing logs.</p>
+
+<table>
+  <tr><th style="width:20%">Outcome</th><th style="width:8%">Exit</th><th>Meaning · who acts</th></tr>
+  <tr><td><code>success</code></td><td>0</td><td>Task completed, typed outputs returned.</td></tr>
+  <tr><td><code>business_outcome</code></td><td>0</td><td>The <em>application</em> legitimately said no — no such member, validation rejected, not authorised. <strong>The automation worked.</strong> A caller branches on the code; nobody is paged at 3am.</td></tr>
+  <tr><td><code>failure</code></td><td>2</td><td>The automation could not proceed. Always carries a bundle: narrative, viewport and full-page screenshots, accessibility snapshot, page text.</td></tr>
+  <tr><td><code>escalated</code></td><td>3</td><td>A human is needed — a risky step, an unknown state, or a failure the caller asked to escalate rather than fail.</td></tr>
+</table>
+
+<blockquote class="say"><p>"Separating <em>business outcome</em> from <em>failure</em> is what I would
+defend hardest. 'No such member' is an answer. If that pages someone, the automation is worse than
+useless, because people start ignoring the alerts."</p></blockquote>
+
+<h3>Recoverable — handled without telling anyone</h3>
+<table>
+  <tr><th style="width:27%">Condition</th><th>What the engine does</th></tr>
+  <tr><td><code>SESSION_EXPIRED</code></td><td>Re-runs the login prelude, then restarts the flow from where it lost its place.</td></tr>
+  <tr><td><code>SERVER_ERROR</code></td><td>Reloads and retries, bounded.</td></tr>
+  <tr><td><code>MAINTENANCE_NOTICE</code></td><td>Dismisses a dialog that <em>is</em> in the outcome catalog.</td></tr>
+  <tr><td><code>SLOW_LOAD</code></td><td>Tolerates it, extends the wait, flags it as a soft signal.</td></tr>
+  <tr><td><code>RECOVERY_LOOP</code></td><td>The guard. The same recoverable condition twice at the same step stops the run rather than retrying forever.</td></tr>
+</table>
+
+<h3>Hard failures — deliberately debuggable</h3>
+<p><code>WRONG_SCREEN</code> · <code>LOCATOR_NOT_FOUND</code> (lists every strategy tried and what
+was actually visible) · <code>CHECKPOINT_FAILED</code> (the action ran, the expected state did not
+appear) · <code>UNKNOWN_DIALOG</code> · <code>STEP_TIMEOUT</code> / <code>RUN_TIMEOUT</code> ·
+<code>UNSAFE_RESTART</code> (refuses to restart a flow that already committed something).</p>
+
+<h3>Refused before a browser opens</h3>
+<p><code>INVALID_ARTIFACT</code> · <code>INVALID_INPUT</code> (a parameter failing its declared
+pattern) · <code>MISSING_SECRET</code> · <code>ARTIFACT_NOT_APPROVED</code> ·
+<code>POLICY_VIOLATION</code> · <code>RUN_IN_PROGRESS</code>. A bad call costs milliseconds, and
+<code>stepsRun: 0</code> proves nothing touched the application.</p>
+
+<h3>Risk has two grades, not one</h3>
+<p>The sub-account flow posts twice: <code>Continue</code> validates and re-renders;
+<code>Open Account</code> moves money. Treating both as risky asks a human to approve a step that
+commits nothing — and an operator asked to approve noise clicks through the prompt that matters at
+the same speed. So a plain form submit is graded <code>sideEffect: possible</code> and runs; only an
+irreversible signal escalates.</p>
+
+<h3>The human-in-the-loop cases</h3>
+<ul>
+  <li><strong>Risky step</strong> — approve, and the engine proceeds under its own controller with the approver recorded.</li>
+  <li><strong>Unknown state</strong> — take control of the live browser, fix it by hand, hand back, and the run resumes <em>at the step it stopped at</em>.</li>
+  <li><strong>Manual pause</strong> — stop a healthy run between steps, with nothing wrong, to look around.</li>
+  <li><strong>Timeout</strong> — an intervention nobody claims ends the run as <code>escalated</code> rather than hanging forever.</li>
+  <li><strong>Conflict</strong> — a second operator claiming the same intervention gets a conflict, not a second lease.</li>
+</ul>
+</section>
+
+<!-- ───────────────────────────── STEP 4 ───────────────────────────── -->
+<section class="step">
+<h2><span class="stepno">Step 4</span>Extra things I took care of, beyond the requirement</h2>
+
+<p class="note">Every one of these came from running the system against the real application, not
+from planning. That is the point worth making.</p>
+
+<h3>The goal that was impossible, with the test suite green</h3>
+<p>The application takes its final approval with a native <code>confirm()</code>. The click
+<strong>fails</strong> with the dialog still open; accepting the dialog is what opens the account.
+The model had no tool that could answer a dialog — so goal G2 could not be completed at all, and
+nothing said so. Adding the tool exposed <strong>five further defects</strong>, each producing a
+plausible wrong answer rather than a crash:</p>
+<ol>
+  <li>The recorder dropped the commit step entirely (it skipped actions that reported failure), producing an artifact that replays straight past the confirmation — and validates cleanly.</li>
+  <li><code>pointOfNoReturn</code> was only ever set on a risky <em>click</em>, so a replay that opened a real account would have reported <code>sideEffects: "possible"</code>.</li>
+  <li>A modal is not a screen: the recorded precondition was a landmark signature of the page behind the dialog, which cannot be queried while it is blocked — <code>WRONG_SCREEN</code>, one action short of the commit.</li>
+  <li>The dialog matched <code>UNKNOWN_DIALOG</code> on the very step whose job is to answer it.</li>
+  <li>Replay treated the dialog-raising click as a surface error and stopped before the step that answers it.</li>
+</ol>
+<blockquote class="say"><p>"This is the finding I am proudest of, and it is not a feature. A whole
+goal was unreachable and every test passed. It was only found by driving the real application to its
+point of no return and printing what came back."</p></blockquote>
+
+<h4>Accepting a dialog is its own decision</h4>
+<p>I considered carrying the approval forward so the operator is asked once. I decided against it:
+the <code>confirm()</code> is the application's own last-chance warning, and an operator who
+approved a click has not yet seen the sentence "This action cannot be undone". Two interventions,
+each with its own screenshot, is also better evidence than one plus a silent auto-accept.</p>
+
+<h3>A monitoring signal that fired on a page that had not changed</h3>
+<p>Visual drift was intersection-over-union of a control's box against its recording. It reported
+drift on <em>every</em> control of an unchanged page — legacy buttons are ~37×14px and IoU collapses
+at that scale. Replaced with centre displacement over a scale floor. <strong>Nothing failed: the
+finding came from reading the evidence of a passing run and asking why it had anything to
+report.</strong> A signal that is always on is worse than no signal, and it ships, because the tests
+stay green.</p>
+
+<h3>Three separate redaction leaks</h3>
+<p>The last wrote <code>interventions.json</code> unredacted, putting a member ID into a captured
+URL. The fix was a test that walks <strong>every file a handover writes</strong> rather than the
+files someone remembered. The remaining limit is stated rather than hidden — see Step 6.</p>
+
+<h3>Derive state, do not store it</h3>
+<p>Run status was a stored field and stuck on "running" forever, because teardown fires a change
+callback while the state is still running. Made it a getter. That same shape — a stored value
+clobbered by a callback during teardown — caused four separate bugs, so it became a rule.</p>
+
+<h3>Tests that modified the fixtures they were reading</h3>
+<p>Twice. Once when an artifact was approved on disk while the suite read it as a draft fixture;
+once when the console learned to record artifacts and the suite began overwriting a committed
+deliverable. Both now use isolated directories, and the second is asserted.</p>
+
+<h3>Secrets: asking git, not <code>.gitignore</code></h3>
+<p><code>cua doctor</code> checks whether git is <em>tracking</em> a secret and whether one was ever
+committed. Those two answers disagree exactly when a file was staged before the ignore rule was
+written — the case that actually leaks a key — and deleting it later does not help, because history
+keeps it. Both states are tested against throwaway repositories.</p>
+
+<h3>Defence in depth, because each layer is bypassable alone</h3>
+<table>
+  <tr><th style="width:24%">Layer</th><th>Why the one above it is not enough</th></tr>
+  <tr><td>1 · Decision</td><td>—</td></tr>
+  <tr><td>2 · Surface boundary</td><td><strong>Replay has no model</strong>, so layer 1 never runs on the path that runs most often.</td></tr>
+  <tr><td>3 · Network</td><td>A redirect or injected asset moves the session without any engine code asking.</td></tr>
+  <tr><td>4 · Pre-flight</td><td>An artifact travels between environments; its policy must be a subset of the one in force where it lands.</td></tr>
+</table>
+<p>A human who takes control is <strong>not</strong> blocked by layer 2 — they are recorded as
+<code>policy_override</code>. Refusing them would disable escalation exactly when it is needed.</p>
+
+<h3>Smaller ones worth a sentence each</h3>
+<ul>
+  <li><strong>Prelude circularity</strong> — the sign-in screen matches <code>SESSION_EXPIRED</code> and is also where the login prelude legitimately starts; that outcome is inert while checking a precondition inside its own prelude.</li>
+  <li><strong>The run clock stops for humans</strong> — time parked in an intervention does not count against the run timeout, or a long handover would fail a run that was never stuck.</li>
+  <li><strong>Extraction anchors are checked for leakage</strong> — an anchor containing the member ID would differ per member, so the recorder rejects it.</li>
+  <li><strong>Dialogs are raced, not awaited</strong> — a modal used to freeze Playwright mid-action; the surface races the action against dialog appearance with a timeout backstop.</li>
+  <li><strong>Detours are pruned</strong> — a wrong turn during discovery is removed from the recorded flow, so the artifact is the path that worked, not the path that was taken.</li>
+</ul>
+</section>
+
+<!-- ───────────────────────────── STEP 5 ───────────────────────────── -->
+<section class="step">
+<h2><span class="stepno">Step 5</span>The demo</h2>
+
+<h3>Before recording</h3>
+<pre><code>lsof -ti:4100,4200,4300 | xargs kill -9 2>/dev/null   # stale process = engine dies silently
+pnpm cua doctor          # expect 8 ok, 1 warning, 0 failures
+pnpm demo                # target app + engine + console; Ctrl-C stops all three
+
+rm -f artifacts/member-branch-and-tenure@1.json        # the live-learn goal must not exist
+# and member-savings-balance@2 must be a DRAFT, or Act 3's refusal beat does not fire</code></pre>
+<p class="note">Restarting the target app resets account numbering, so every rehearsal starts at
+<code>CU-700001</code>. Record the terminal window only — <code>.env</code> holds a live API key.</p>
+
+<h3>Act 1 · The system being automated <span class="note">(60s)</span></h3>
+<div class="do">Open <code>localhost:4100</code>, sign in <code>demo/demo</code>, search <code>10042</code>.</div>
+<blockquote class="say"><p>"A core banking UI that still runs in production and nobody will rewrite.
+Framesets, table layouts, no API, no test ids. The balance I want is in an unlabelled table cell."</p></blockquote>
+
+<h3>Act 2 · Learning a task <span class="note">(90s)</span></h3>
+<div class="do"><code>pnpm cua discover --goal "Look up member {memberId} and read the current balance of their Savings account." --url http://localhost:4100/ --capability-id member-savings-balance --param memberId=10042</code><br>then <code>pnpm cua artifact summary artifacts/member-savings-balance@1.json</code></div>
+<blockquote class="say"><p>"The model never sees raw HTML — an accessibility tree flattened across
+frames, plus a screenshot with elements numbered. And the output is not a transcript: it is a typed
+contract, with locator fallbacks and the outcomes it knows how to handle."</p></blockquote>
+
+<h3>Act 3 · Replay, and the approval gate <span class="note">(90s)</span></h3>
+<div class="do"><code>pnpm cua replay artifacts/member-savings-balance@2.json --param memberId=10042</code> → <code>FAILURE ARTIFACT_NOT_APPROVED</code>, exit 2, in <strong>3ms without opening a browser</strong>. Approve on the console's Capabilities page, then replay for <code>10042</code>, then <code>10077</code>.</div>
 <blockquote class="say"><p>"A model worked this out once. That does not make it allowed to run
-unattended. Approval is a human decision made once, at review time, rather than on every run."</p></blockquote>
-<div class="do">Approve it on the console's <strong>Capabilities</strong> page. Show the contract, the secrets rendered as references, and the locator fallback chain. Then replay for <code>10042</code>, then for <code>10077</code>.</div>
-<blockquote class="say"><p>"Two seconds, no model, no API cost, same answer every time. The second
-run returns a different balance from the same artifact — so the parameter is real."</p></blockquote>
+unattended. And the second member proves the parameter is real, not baked into the recording."</p></blockquote>
 
-<h3 class="act">Act 4 — the three kinds of wrong <span class="note">(2.5 min)</span></h3>
-<p>Run these back to back and read the <strong>exit codes</strong> aloud. This is the part that
-separates a demo from a toy.</p>
-<pre><code>pnpm cua replay …@2.json --param memberId=99999
-#   BUSINESS_OUTCOME MEMBER_NOT_FOUND            exit 0
+<h3>Act 4 · The three kinds of wrong <span class="note">(2.5 min)</span></h3>
+<pre><code>--param memberId=99999                                 → BUSINESS_OUTCOME MEMBER_NOT_FOUND  exit 0
+--param memberId=10042 --fault session_expired         → SUCCESS, recovered                 exit 0
+--param memberId=10042 --fault session_expired:sticky  → FAILURE RECOVERY_LOOP              exit 2</code></pre>
+<div class="do">Open <code>evidence/replay-g1-recovery-loop/failure-*.md</code> — expected state, observed state, suggested next action.</div>
 
-pnpm cua replay …@2.json --param memberId=10042 --fault session_expired
-#   SUCCESS — recovered by re-running the login prelude   exit 0
-
-pnpm cua replay …@2.json --param memberId=10042 --fault session_expired:sticky
-#   FAILURE RECOVERY_LOOP                        exit 2</code></pre>
-<blockquote class="say"><p>"Three different kinds of wrong. 'No such member' is an <em>answer</em>,
-not an error — the automation worked perfectly, so exit 0 and the caller gets a typed business
-outcome. A session expiry is recoverable, so it re-runs the login prelude and carries on, and the
-caller never learns it happened. The same expiry that never clears is bounded after two attempts
-and reported. A caller can branch on these without parsing a log."</p></blockquote>
-<div class="do">Open <code>evidence/replay-g1-recovery-loop/failure-*.md</code> — the narrative names the expected state, the observed state and a suggested next action, next to a screenshot, an accessibility snapshot and the page text.</div>
-
-<h3>Act 5 — a human takes over the same live session <span class="note">(3 min)</span></h3>
-<p>This is the part the brief cares about most. Do it in the console.</p>
-<div class="do">On <strong>Start</strong>: capability <code>member-savings-balance@2</code>, member <code>10042</code>, Pace <strong>"Watchable — a beat between steps"</strong>, Break something → <strong>"Undeclared error on the next click"</strong>. Press Replay.</div>
-<p class="note">Pace matters: at full speed the run finishes before the live viewport renders a
-frame, and the live view is the most convincing thing in the demo.</p>
-<p>The engine stops by itself: <code>UNKNOWN_DIALOG</code>, run state <strong>paused</strong>, the
-viewport labelled "nobody is driving", a <strong>Waiting</strong> badge in the nav.</p>
+<h3>Act 5 · A human takes the same live session <span class="note">(3 min)</span></h3>
+<div class="do">Console → Start: <code>member-savings-balance@2</code>, member <code>10042</code>, Pace <strong>“Watchable”</strong>, Break something → <strong>“Undeclared error on the next click”</strong>.</div>
+<p class="note">Pace matters: at full speed the run ends before the live viewport draws a frame.</p>
+<p>The engine stops itself: <code>UNKNOWN_DIALOG</code>, state <strong>paused</strong>, "nobody is
+driving", a <strong>Waiting</strong> badge.</p>
 <blockquote class="say"><p>"It did not guess. That dialog is not in this capability's outcome
-catalog, so it refuses to touch it. An automation that dismisses unknown dialogs is an automation
-that will eventually dismiss something expensive."</p></blockquote>
-<div class="do"><strong>Take control</strong> → state becomes <em>human control</em>, badge flips to "you are driving", Accept/Dismiss appear over the live frame. Dismiss the alert yourself. Then <strong>Hand back</strong>.</div>
-<blockquote class="say"><p>"Seven steps. An uninterrupted run of this capability is also seven
-steps — so it resumed the step it stopped at, in the session it paused in. The browser was never
-restarted, and the cookies and frames are the ones my own clicks left behind."</p></blockquote>
-<div class="do">Show <strong>Waiting</strong>: <code>resolved · replay failure · same · by operator-1</code>.</div>
+catalog. An automation that dismisses unknown dialogs will eventually dismiss something
+expensive."</p></blockquote>
+<div class="do"><strong>Take control</strong> → "you are driving". Dismiss the alert yourself. <strong>Hand back</strong>. Then <strong>Waiting</strong>: <code>resolved · same · by operator-1</code>.</div>
+<blockquote class="say"><p>"Seven steps — the same as an uninterrupted run. It resumed the step it
+stopped at, in the session it paused in. The cookies and frames are the ones my own clicks left
+behind."</p></blockquote>
 
-<h3 class="act">Act 6 — teaching it something new, live <span class="note">(2 min)</span></h3>
-<p>This answers the question everyone asks: <em>does it only do the two things you pre-built?</em></p>
-<div class="do">Ask the audience for a fact about a member, or use this one:
-<pre><code>pnpm cua discover \
+<h3>Act 6 · Teaching it something new, live <span class="note">(2 min)</span></h3>
+<div class="do"><pre><code>pnpm cua discover \
   --goal "Look up member {memberId} and report which branch they belong to and the date they have been a member since." \
   --url http://localhost:4100/ --capability-id member-branch-and-tenure --param memberId=10042 \
   --name "Member branch and tenure"</code></pre></div>
-<p>Verified timing: <strong>25 seconds, 8 model calls, about $0.07</strong>, producing a 4-step
-artifact with a login prelude and <strong>two</strong> outputs, which then replayed in 2.2s and
-generalised to a member it had never seen.</p>
-<p class="note"><strong>This goal has been rehearsed once and then deliberately deleted — the
-artifact and its evidence are not in the repository and never were.</strong> So the run you do on
-camera is genuinely the first time the system has seen this goal, and you already know it works,
-how long it takes and what it costs. That is the difference between a live demo and a gamble. After
-a rehearsal, delete it again with the <code>rm -f</code> in the pre-flight block above.</p>
-<blockquote class="say"><p>"I have never run that goal before. It signed in, searched, found both
-values in a different table from the first capability, and worked out a re-readable anchor for
-each — 'the cell to the right of the label Branch'. That anchor is what makes the replay
-deterministic."</p></blockquote>
-<div class="do"><code>pnpm cua replay artifacts/member-branch-and-tenure@1.json --param memberId=10042 --allow-draft</code> → <code>{"branch":"Main Street","memberSince":"2014-03-11"}</code> in 2.2s.<br>
-Then <code>--param memberId=10077</code> → <code>{"branch":"Riverside","memberSince":"2018-09-30"}</code>.</div>
-<blockquote class="say"><p>"Twenty-five seconds to learn it, two seconds to run it, and it
-generalises to a member it was never shown. That is the whole thesis: the expensive, non-deterministic
-part happens once."</p></blockquote>
+<p>Rehearsed: <strong>25s, 8 calls, ~$0.074</strong> → 4 steps, login prelude, <strong>two</strong>
+outputs. Replays in 2.2s; <code>memberId=10077</code> returns Riverside / 2018-09-30.</p>
+<p class="note"><strong>This goal was run once to verify, then deleted — the artifact and its
+evidence are not in the repository and were never committed.</strong> So the run on camera is
+genuinely the first time the system has seen it, and you already know it works, how long it takes,
+and what it costs.</p>
+<blockquote class="say"><p>"I have never run that goal. It found both values in a different table
+from the first capability and worked out a re-readable anchor for each — 'the cell to the right of
+the label Branch'. Twenty-five seconds to learn, two seconds to run, and it generalises to a member
+it was never shown."</p></blockquote>
 
-<h3>Act 7 — the flow that actually commits something <span class="note">(3 min)</span></h3>
-<p>G1 reads. G2 opens an account. Show the evidence of the real run first — a live Claude run here
-is 40 seconds of dead air.</p>
-<div class="do"><code>cat evidence/discovery-g2-open-subaccount/run.json</code> — 15 steps, 15 calls, $0.14. Then open <code>interventions.json</code>: <strong>three</strong> interventions.</div>
-<blockquote class="say"><p>"It stopped three times. Two were the policy: the button whose label
-matches the irreversible list, and the browser's own confirm dialog — which is the step that
-actually opens the account. The <em>first</em> one the model raised itself, before any rule fired:
-it reached the review screen and asked for a human on its own initiative."</p></blockquote>
-<div class="do">On <strong>Capabilities</strong>, show steps 7 and 8 of <code>member-open-subaccount@1</code>, both tagged <em>risky · point of no return</em>.</div>
-<p>Then the closing pair — same artifact, same parameters, one policy setting different:</p>
+<h3>Act 7 · The flow that commits <span class="note">(3 min)</span></h3>
+<div class="do">Show <code>evidence/discovery-g2-open-subaccount/run.json</code> (15 steps, 15 calls, $0.14) and <code>interventions.json</code> — <strong>three</strong> interventions. Then on Capabilities, steps 7 and 8 of <code>member-open-subaccount@1</code>, both <em>risky · point of no return</em>.</div>
+<blockquote class="say"><p>"Two of those were the policy. The <em>first</em> one the model raised
+itself, before any rule fired — it reached the review screen and asked for a human on its own."</p></blockquote>
 <pre><code>pnpm cua replay artifacts/member-open-subaccount@1.json --param memberId=10042
 #   SUCCESS  {"confirmationNumber":"CU-700001"}  side effects: committed   exit 0
-
 pnpm cua replay artifacts/member-open-subaccount@1.json --param memberId=10042 --risky block
 #   FAILURE POLICY_VIOLATION                     side effects: none        exit 2</code></pre>
 <blockquote class="say"><p>"Same capability, same inputs, one line of policy, and the difference is
 whether an account gets opened. The guardrail belongs to the deployment, not to the recorded
 flow."</p></blockquote>
-<div class="do">Show the new account in the bank UI. Note the confirmation number changes every run — each run really opens one.</div>
 
-<h3>Act 8 — safety and evidence <span class="note">(90s)</span></h3>
-<div class="do"><code>pnpm cua doctor</code>, then <code>policy.yaml</code> on screen.</div>
-<blockquote class="say"><p>"The secret check asks git, not <code>.gitignore</code> — those two
-disagree exactly when a file was staged before the ignore rule was written, which is the case that
-actually leaks a key. And deleting it later does not help, because history keeps it."</p></blockquote>
-<blockquote class="say"><p>"Everything the engine may do is one validated file, loaded by every
-entry point. Four layers enforce it: the model's decision, the surface boundary, the network, and a
-pre-flight check that an artifact's policy is a subset of the global one. A human who takes control
-is <em>not</em> blocked by it — they are recorded as an override, because refusing them would
-disable escalation exactly when it is needed."</p></blockquote>
-<div class="do">Finish on <code>evidence/</code> — one directory per run, and say the limit out loud.</div>
-<blockquote class="say"><p>"Screenshots are not masked. They render whatever was on screen,
-including the member ID. The schema pins that flag to <code>false</code> so nobody can claim
-otherwise, and it is written down in the README. Everything here is synthetic."</p></blockquote>
+<h3>Act 8 · Safety and evidence <span class="note">(90s)</span></h3>
+<div class="do"><code>pnpm cua doctor</code>, then <code>policy.yaml</code>, then <code>evidence/</code>.</div>
+<blockquote class="say"><p>"One validated file, four enforcement layers, and a secret check that asks
+git rather than <code>.gitignore</code>. Then the honest part — screenshots are not masked."</p></blockquote>
+</section>
 
-<h2 class="act">4 · Error handling, in full</h2>
+<!-- ───────────────────────────── STEP 6 ───────────────────────────── -->
+<section class="step">
+<h2><span class="stepno">Step 6</span>Disclaimers, limits and cuts</h2>
 
-<p>Every run ends in exactly one of four shapes, each with its own exit code. This is the single
-most important design decision in the project, because it is what lets a caller automate against
-the thing.</p>
+<p>Stating these plainly is deliberate. Every one is written down in the repository as well.</p>
 
+<h3>Known limits of what is built</h3>
 <table>
-  <tr><th style="width:19%">Outcome</th><th style="width:8%">Exit</th><th>Meaning · who acts</th></tr>
-  <tr><td><code>success</code></td><td>0</td><td>The task completed; typed outputs returned.</td></tr>
-  <tr><td><code>business_outcome</code></td><td>0</td><td>The <em>application</em> said no, legitimately — no such member, validation rejected, not authorised. The automation worked. A caller branches on the code; nobody is paged.</td></tr>
-  <tr><td><code>failure</code></td><td>2</td><td>The automation could not proceed. Always carries a failure bundle: narrative, screenshots, accessibility snapshot, page text.</td></tr>
-  <tr><td><code>escalated</code></td><td>3</td><td>A human is needed — a risky step, an unknown state, or a failure the caller asked to escalate rather than fail.</td></tr>
+  <tr><th style="width:29%">Limit</th><th>Detail, and what would fix it</th></tr>
+  <tr><td><strong>Screenshots are not masked</strong></td><td>They render whatever was on screen, member IDs included. The structured evidence <em>is</em> redacted and tested; a grep cannot see inside a PNG. The schema types <code>maskEvidenceScreenshots</code> as the literal <code>false</code> so no deployment can claim masking that does not exist. Every element already has a recorded bbox, so blurring is contained follow-up work.</td></tr>
+  <tr><td><strong>Console has no authentication</strong></td><td>It binds to loopback and assumes one trusted operator. Multi-operator control needs identity; the intervention record already carries <code>approvedBy</code>.</td></tr>
+  <tr><td><strong>Evidence is unencrypted, no retention</strong></td><td>Written to the local filesystem. A real deployment wants an encrypted bucket and an expiry policy.</td></tr>
+  <tr><td><strong>One application, one tenant</strong></td><td>Multi-tenant overlays are designed and specified, not built. The artifact carries the origins it was recorded against, and a different origin is treated as a different tenant.</td></tr>
+  <tr><td><strong>Cost figures are estimates</strong></td><td>Computed from token counts at published prices, recorded per run in <code>usage.json</code>.</td></tr>
 </table>
 
-<h3>Recoverable conditions — handled without telling anyone</h3>
-<table>
-  <tr><th style="width:26%">Code</th><th>What the engine does</th></tr>
-  <tr><td><code>SESSION_EXPIRED</code></td><td>Re-runs the login prelude, then restarts the flow from the step it lost.</td></tr>
-  <tr><td><code>SERVER_ERROR</code></td><td>Reloads and retries, bounded.</td></tr>
-  <tr><td><code>MAINTENANCE_NOTICE</code></td><td>Dismisses a dialog that <em>is</em> in the outcome catalog.</td></tr>
-  <tr><td><code>SLOW_LOAD</code></td><td>Tolerates it, extends the wait, and flags it in evidence as a soft signal.</td></tr>
-  <tr><td><code>RECOVERY_LOOP</code></td><td>The guard: the same recoverable condition twice at the same step stops the run rather than retrying forever.</td></tr>
-</table>
-
-<h3>Hard failures — deliberately debuggable</h3>
-<p><code>WRONG_SCREEN</code> (a step's precondition does not hold) · <code>LOCATOR_NOT_FOUND</code>
-(lists every strategy tried and what was actually visible) · <code>CHECKPOINT_FAILED</code> (the
-action ran but the expected state did not appear) · <code>UNKNOWN_DIALOG</code> ·
-<code>STEP_TIMEOUT</code> / <code>RUN_TIMEOUT</code> · <code>UNSAFE_RESTART</code> (refuses to
-restart a flow that already committed something).</p>
-
-<h3>Refused before a browser even opens</h3>
-<p><code>INVALID_ARTIFACT</code> · <code>INVALID_INPUT</code> (a parameter fails its declared
-pattern) · <code>MISSING_SECRET</code> · <code>ARTIFACT_NOT_APPROVED</code> ·
-<code>POLICY_VIOLATION</code> · <code>RUN_IN_PROGRESS</code>. Catching these pre-flight means a bad
-call costs milliseconds rather than a browser session, and <code>stepsRun: 0</code> proves nothing
-touched the application.</p>
-
-<h2>5 · Decisions and trade-offs</h2>
-
-<h3>Locators: many candidates, ranked, with a drift signal</h3>
-<p>Every recorded target carries a chain — accessible role + name, then a CSS path, then visual
-position — with the recorder's own rationale for each. On replay the engine tries them in order. If
-it matches on a fallback, that is not a failure: it emits a <strong>drift</strong> event, which is
-the early warning that the screen is changing under the artifact. XPath was rejected because it
-encodes exactly the structure a legacy UI redesign changes.</p>
-
-<h3>Preconditions are screen signatures, not URLs</h3>
-<p>In a frameset the top-level URL barely changes. Each step instead asserts a URL pattern plus
-<em>N of M</em> landmarks, so a step refuses to run on the wrong screen — the difference between a
-clean <code>WRONG_SCREEN</code> and clicking blindly into whatever happened to be there.</p>
-
-<h3>Session control by wrapping, not by contract</h3>
-<p>A lease could have been threaded through <code>Surface.act</code>. Instead
-<code>LeasedSurface</code> wraps the surface, so the perception contract stays free of
-control-plane concerns — and revoking a lease disarms every reference at once, <em>including one a
-caller captured before an await</em>. The policy layer is a second wrapper that composes with it.</p>
-
-<h3>Policy is data</h3>
-<p>One validated <code>policy.yaml</code>. Unknown keys are rejected rather than ignored: a
-misspelled security control that silently enforces nothing is worse than a startup error. One field
-is typed as the literal <code>false</code> — screenshot masking we did not build — so no deployment
-can turn on a feature that does not exist.</p>
-
-<h3>Risk has two grades</h3>
-<p>The sub-account flow posts twice: <code>Continue</code> validates and re-renders,
-<code>Open Account</code> moves money. Treating both as risky would ask a human to approve a step
-that commits nothing — and an operator who is asked to approve noise clicks through the prompt that
-matters at the same speed. So a plain form submit is graded <code>sideEffect: possible</code> and
-runs; only an irreversible signal escalates.</p>
-
-<h2 class="act">6 · Things covered beyond the brief</h2>
-
-<p>Ask for these by name if the interviewer wants depth — each was a real problem found by running
-the thing, not by planning.</p>
-
-<h4>The point of no return is a native dialog</h4>
-<p>The application takes its final approval with <code>confirm()</code>. The click <em>fails</em>
-with the dialog still open; accepting it is what opens the account. The model had no tool that
-could answer a dialog, so goal G2 was <strong>impossible</strong> — with the whole test suite green.
-Adding the tool exposed five further defects, every one of which produced a plausible wrong answer
-rather than a crash: the recorder dropped the commit step entirely; <code>pointOfNoReturn</code>
-was only ever set on a risky <em>click</em>; a modal is not a screen, so the recorded precondition
-could never be satisfied; the dialog matched <code>UNKNOWN_DIALOG</code> on the very step that
-exists to answer it; and replay treated the dialog-raising click as a surface error.</p>
-
-<h4>A monitoring signal that fired on a page that had not changed</h4>
-<p>Visual drift was intersection-over-union of the control's box against its recording. It reported
-drift on every control of an unchanged page — legacy buttons are ~37×14px, and IoU falls off a
-cliff at that scale. Replaced with centre displacement over a scale floor. <strong>Nothing failed;
-the finding came from reading the evidence of a passing run and asking why it had anything to
-report.</strong></p>
-
-<h4>Three separate redaction leaks</h4>
-<p>The last one wrote <code>interventions.json</code> unredacted, putting a member ID in a captured
-URL. The fix was a test that walks <em>every file a handover writes</em> rather than the files
-someone thought of. The honest limit is stated in the README: screenshots are not masked.</p>
-
-<h4>Derived state, not stored</h4>
-<p>Run status was a stored field and stuck on "running" forever, because teardown fires a change
-callback while the state is still running. Made a getter. The general rule — if a value can be
-derived, derive it, especially where callbacks fire during teardown — came up four times.</p>
-
-<h4>Tests that modified the fixtures they were reading</h4>
-<p>Twice. Once when an artifact was approved on disk while the suite read it as a draft fixture;
-once when the console learned to record artifacts and the suite began overwriting a committed
-deliverable. Both now use isolated directories.</p>
-
-<h4>Smaller ones worth a sentence each</h4>
+<h3>Deliberately deferred, with reasons</h3>
 <ul>
-  <li><strong>Prelude circularity</strong> — the sign-in screen matches <code>SESSION_EXPIRED</code>, and is also where the login prelude legitimately starts. That outcome is inert while checking a precondition inside its own prelude.</li>
-  <li><strong>The run clock stops for humans</strong> — time parked in an intervention does not count against the run's timeout, or long handovers would fail runs that were never stuck.</li>
-  <li><strong>Extraction anchors are checked for leakage</strong> — an anchor containing the member ID would be a different anchor for every member, so the recorder rejects it.</li>
-  <li><strong>Dialogs raced, not awaited</strong> — a modal used to freeze Playwright mid-action; the surface now races the action against dialog appearance, with a timeout backstop.</li>
-  <li><strong>Loopback only, one operator</strong> — the console binds to 127.0.0.1 and has no auth; that is stated as a cut, with <code>approvedBy</code> already in the record for the identity that would fix it.</li>
+  <li><strong>New-tab and detached-element handling</strong> — the page-switch guard and per-step re-resolution are in; a dedicated multi-tab case has no instance in either goal flow.</li>
+  <li><strong>Checkbox state-assert and fill fallbacks</strong> — same reason: no instance in the flows built.</li>
+  <li><strong>Capability catalog API, confidence and stability scoring</strong> — designed and listed as cuts. The schema already carries what they need: status, version, provenance, <code>approvedBy</code>.</li>
+  <li><strong>LLM-assisted replay recovery</strong> — deliberately not built. Putting a model back into the replay path would undo the property the whole design exists to provide.</li>
 </ul>
 
-<h2>7 · Questions you should expect</h2>
+<h3>What the demo is, and is not</h3>
+<ul>
+  <li>The target is a <strong>mock I wrote</strong>. It is representative of legacy patterns, not a real core banking system, and holds synthetic data only — which is why these screenshots are safe to publish.</li>
+  <li>The "operator" approving interventions is a human acting through the console's own HTTP API; every approval is recorded with who gave it.</li>
+  <li>Replaying the sub-account capability <strong>really opens an account</strong> in the mock. The confirmation number changes every run; that is the proof, not a glitch.</li>
+  <li>The live-learned capability in Act 6 is deleted between rehearsals on purpose, so the recorded run is a genuine first encounter.</li>
+</ul>
 
+<h3>Questions to expect</h3>
 <table>
-  <tr><th style="width:34%">Question</th><th>Answer</th></tr>
-  <tr><td>"What if the UI changes?"</td><td>Locator fallbacks absorb small changes and emit a drift event as early warning. A structural change fails as <code>WRONG_SCREEN</code> or <code>LOCATOR_NOT_FOUND</code> with a bundle, and re-discovery produces a new artifact version. The artifact is versioned precisely so this is a diff, not a mystery.</td></tr>
-  <tr><td>"Why not run the agent every time?"</td><td>Cost, latency, and non-determinism. $0.07 and 25 seconds versus $0 and 2 seconds — and a compliance story you can actually make, because the replay path has no model in it.</td></tr>
-  <tr><td>"How do you stop it doing something dangerous?"</td><td>Four enforcement layers from one policy file, an approval gate before unattended replay, and two risk grades so the escalation that matters is not buried in noise. Demonstrated by running the same artifact with one flag changed.</td></tr>
-  <tr><td>"How does this scale past two capabilities?"</td><td>Honest answer: a catalog API and confidence/stability scoring are designed and listed as cuts, not built. The artifact schema already carries the fields they need — status, version, provenance, approvedBy.</td></tr>
-  <tr><td>"What would you do next?"</td><td>Screenshot masking (bboxes are already recorded, so it is contained), console auth, and a desktop surface behind the existing <code>Surface</code> interface — the seam was designed for it.</td></tr>
-  <tr><td>"What went wrong building it?"</td><td>Lead with G2 being impossible and the suite still green. It is the strongest thing you can say: the system was tested against the real application, and that is the only reason it was found.</td></tr>
+  <tr><th style="width:33%">Question</th><th>Answer</th></tr>
+  <tr><td>"What if the UI changes?"</td><td>Locator fallbacks absorb small changes and emit drift as early warning. A structural change fails with a bundle, and re-discovery produces a new artifact <em>version</em> — a diff, not a mystery.</td></tr>
+  <tr><td>"Why not run the agent every time?"</td><td>Cost, latency, non-determinism, and no compliance story. $0.07 and 25s versus $0 and 2s.</td></tr>
+  <tr><td>"How do you stop it doing something dangerous?"</td><td>Four layers from one policy file, an approval gate before unattended replay, and two risk grades so the escalation that matters is not buried in noise. Demonstrated by changing one flag.</td></tr>
+  <tr><td>"How does this scale past three capabilities?"</td><td>Honest answer: catalog API and stability scoring are designed, not built — said plainly rather than hand-waved.</td></tr>
+  <tr><td>"What went wrong building it?"</td><td>Lead with G2 being impossible while the suite was green. It is the strongest thing you can say, because it shows the system was tested against reality.</td></tr>
 </table>
 
-<h2>8 · Numbers worth knowing</h2>
+<h3>Numbers worth knowing</h3>
 <table>
-  <tr><th style="width:44%">Thing</th><th>Value</th></tr>
-  <tr><td>Discovery, G1 (read-only)</td><td>8 model calls, ~$0.072</td></tr>
-  <tr><td>Discovery, G2 (commits, 3 escalations)</td><td>15 steps, 15 calls, $0.145</td></tr>
-  <tr><td>Discovery, live-learned capability</td><td>25s, 8 calls, ~$0.074</td></tr>
-  <tr><td>Replay, G1 / new capability / G2</td><td>7 steps ~2.0s · 8 steps ~2.2s · 12 steps ~4.0s</td></tr>
-  <tr><td>Tests</td><td>156 engine &amp; CLI + 10 console, all against the real mock app and a real browser</td></tr>
-  <tr><td>Evidence directories</td><td>16, indexed by <code>cua evidence index</code> from the run files themselves</td></tr>
+  <tr><th style="width:46%">Thing</th><th>Value</th></tr>
+  <tr><td>Discovery — G1, read-only</td><td>8 calls, ~$0.072</td></tr>
+  <tr><td>Discovery — G2, commits, 3 escalations</td><td>15 steps, 15 calls, $0.145</td></tr>
+  <tr><td>Discovery — live-learned capability</td><td>25s, 8 calls, ~$0.074</td></tr>
+  <tr><td>Replay — G1 / new / G2</td><td>7 steps ~2.0s · 8 steps ~2.2s · 12 steps ~4.0s</td></tr>
+  <tr><td>Tests</td><td>156 engine &amp; CLI + 10 console, against the real mock app and a real browser</td></tr>
+  <tr><td>Evidence directories</td><td>16, indexed from the run files themselves by <code>cua evidence index</code></td></tr>
 </table>
 
-<p class="note" style="margin-top:22px">Print to PDF from Chrome: <kbd>Cmd</kbd>+<kbd>P</kbd> →
-Destination <em>Save as PDF</em> → Margins <em>Default</em> → Background graphics <em>on</em>.</p>
+<p class="note" style="margin-top:20px">Print to PDF from Chrome: <kbd>Cmd</kbd>+<kbd>P</kbd> →
+Destination <em>Save as PDF</em> → Background graphics <strong>on</strong>. Be online the first time
+so the diagram renders.</p>
+</section>
+
+<script type="module">
+  import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+  mermaid.initialize({ startOnLoad: true, theme: "neutral", flowchart: { useMaxWidth: true } });
+  // If the CDN is unreachable, point at the source file rather than leaving an empty gap.
+  setTimeout(() => {
+    const d = document.querySelector(".mermaid");
+    if (d && !d.querySelector("svg")) document.querySelector(".fallback").style.display = "block";
+  }, 2500);
+</script>

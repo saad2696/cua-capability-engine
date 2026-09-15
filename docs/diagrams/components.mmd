@@ -1,0 +1,21 @@
+%% Diagram B — runtime components
+flowchart TB
+  Console["Operator console<br/>React + Vite"] -->|"HTTP + WebSocket"| Server["Engine server<br/>Express + ws"]
+  CLI["cua CLI"] --> Core
+  Server --> Core
+
+  subgraph Core["@cua/engine"]
+    direction LR
+    Agent["Discovery<br/>loop"]
+    Replay["Replay<br/>executor"]
+    Session["Session<br/>+ leases"]
+    Policy["Policy gate"]
+  end
+
+  Core --> Surface["Surface interface<br/>perceive · act"]
+  Surface --> PW["PlaywrightSurface<br/>a11y tree + marks"]
+  PW --> Target["Legacy CU Core<br/>mock bank · framesets"]
+  Core --> Ev[("evidence/run/<br/>events · shots · bundle")]
+  Core --> Art[("artifacts/*.json")]
+
+  Policy -.->|"1 decision · 2 surface · 3 network · 4 pre-flight"| Surface

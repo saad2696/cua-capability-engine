@@ -1,6 +1,8 @@
 # Diagrams to produce at the end (mermaid, for the video walkthrough)
 
-- [ ] System architecture: packages, apps, Surface seam, artifact store, evidence store
+- [x] System architecture: packages, apps, Surface seam, artifact store, evidence store
+      → `docs/diagrams/components.mmd`, plus `architecture.mmd` (the life of a capability), both
+        embedded in `docs/demo-narration.html`
 - [ ] Discovery loop: observe → decide → act → record, with policy check and stop conditions
 - [ ] Perception pipeline: CDP frame tree → per-frame AX tree → boxes → filter → marks → Observation
 - [ ] Locator lifecycle: capture (candidates + rationale) → resolve on replay → drift signal

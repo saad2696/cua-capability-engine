@@ -1,0 +1,12 @@
+%% Diagram A — the life of a capability (the story)
+flowchart LR
+  Goal["Goal sentence<br/>plain English"] --> Agent
+  Agent["Discovery loop<br/>observe → decide → act"] <-->|"tool calls"| LLM["Claude Sonnet 5<br/>the ONLY model edge"]
+  Agent --> Rec["Recorder<br/>prunes detours"]
+  Rec --> Art[("Capability artifact<br/>typed · versioned · draft")]
+  Art --> Review{"Human review"}
+  Review -->|"approve"| Replay["Replay executor<br/>NO model · ~2s"]
+  Review -->|"reject"| Bin["back to discovery"]
+  Replay --> Out["success · business_outcome<br/>failure · escalated"]
+  Replay -.->|"risky step or unknown state"| Op["Operator takes the<br/>SAME live session"]
+  Op -.->|"hand back"| Replay
