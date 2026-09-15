@@ -8,7 +8,7 @@
  * a thing with an engine bolted to it.
  */
 import { createServer, type Server } from "node:http";
-import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { join, normalize, resolve as resolvePath } from "node:path";
 import express, { type Express, type Request, type Response } from "express";
 import { WebSocketServer, type WebSocket } from "ws";
@@ -74,7 +74,7 @@ export function createServerApp(opts: ServerOptions = {}): { app: Express; regis
 
   app.post("/api/replay", (req, res) => {
     void (async () => {
-      const body = req.body as { artifactPath?: string; artifact?: unknown; params?: Record<string, string>; fault?: { name: string; sticky?: boolean }; headless?: boolean; allowDraft?: boolean; pauseAtStart?: boolean; stepDelayMs?: number };
+      const body = req.body as { artifactPath?: string; artifact?: unknown; params?: Record<string, string>; fault?: { name: string; sticky?: boolean }; headless?: boolean; allowDraft?: boolean; pauseAtStart?: boolean; stepDelayMs?: number; escalateOnBusinessOutcome?: boolean };
       const raw = body.artifact ?? (body.artifactPath ? readJson(artifactsDir, body.artifactPath) : undefined);
       if (!raw) return void res.status(400).json({ error: "artifact or artifactPath is required" });
       const check = validateCapability(raw);
@@ -85,6 +85,7 @@ export function createServerApp(opts: ServerOptions = {}): { app: Express; regis
         headless: body.headless ?? opts.headless ?? true,
         allowDraft: body.allowDraft ?? true,
         ...(body.pauseAtStart ? { pauseAtStart: true } : {}),
+        ...(body.escalateOnBusinessOutcome ? { escalateOnBusinessOutcome: true } : {}),
         ...(body.stepDelayMs ? { stepDelayMs: body.stepDelayMs } : {}),
         ...(opts.interventionTimeoutMs ? { interventionTimeoutMs: opts.interventionTimeoutMs } : {}),
       });
@@ -252,6 +253,29 @@ export function createServerApp(opts: ServerOptions = {}): { app: Express; regis
    * between "a model worked this out once" and "this may run without a person watching" — which is
    * the whole point of the artifact having a status at all.
    */
+  /**
+   * Remove a capability. Destructive and not undoable from here, so it refuses the two cases an
+   * operator would regret: a capability a run is currently executing, and an approved one unless
+   * the caller says explicitly that it meant it. A console that can record capabilities but never
+   * retire them fills up with drafts nobody dares touch.
+   */
+  app.delete("/api/artifacts/:file", (req, res) => {
+    const file = String(req.params.file);
+    const path = join(artifactsDir, file);
+    if (file.includes("..") || !existsSync(path)) return void notFound(res, "artifact");
+
+    const raw = JSON.parse(readFileSync(path, "utf8")) as { capability: { id: string; status: string } };
+    const busy = registry.list().find((r) => !r.finishedAt && r.capabilityId === raw.capability.id);
+    if (busy) return void res.status(409).json({ error: `run ${busy.id} is using this capability`, runId: busy.id });
+
+    const force = req.query["force"] === "true" || (req.body as { force?: boolean } | undefined)?.force === true;
+    if (raw.capability.status === "approved" && !force)
+      return void res.status(409).json({ error: "this capability is approved; deleting it needs force", status: raw.capability.status });
+
+    unlinkSync(path);
+    res.json({ file, deleted: true });
+  });
+
   app.post("/api/artifacts/:file/approve", (req, res) => {
     const file = String(req.params.file);
     const path = join(artifactsDir, file);
@@ -370,7 +394,6 @@ export async function startServer(port = 4200, opts: ServerOptions = {}): Promis
  * the failure is a clear message rather than a silent write to somebody else's browser.
  */
 function attachLive(ws: WebSocket, run: RunRecord): void {
-  let leased: ReturnType<RunRecord["session"]["claim"]>["surface"] | undefined;
   const streamer = new FrameStreamer(run.surface, run.session, (f) => {
     if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(f));
   });
@@ -380,7 +403,7 @@ function attachLive(ws: WebSocket, run: RunRecord): void {
   const say = (o: unknown) => {
     if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(o));
   };
-  say({ type: "hello", runId: run.id, sessionId: run.session.id, state: run.session.state, interventions: run.session.openInterventions });
+  say({ type: "hello", runId: run.id, sessionId: run.session.id, state: run.session.state, controlled: run.session.state === "human_control", interventions: run.session.openInterventions });
 
   ws.on("message", (data) => {
     void (async () => {
@@ -388,15 +411,18 @@ function attachLive(ws: WebSocket, run: RunRecord): void {
       if (msg.type === "claim") {
         const id = String(msg.interventionId ?? run.session.openInterventions[0]?.id ?? "");
         const claimed = run.session.claim(id, String(msg.by ?? "operator"));
-        leased = claimed.surface;
         return say({ type: "claimed", intervention: claimed.intervention });
       }
       if (msg.type === "resolve") {
         const id = String(msg.interventionId ?? run.session.openInterventions[0]?.id ?? "");
         run.session.resolve(id, (msg.resumeAt as "same" | "next" | "abort") ?? "same", String(msg.by ?? "operator"), msg.note ? String(msg.note) : undefined);
-        leased = undefined;
         return say({ type: "resolved", state: run.session.state });
       }
+      // Derived from the session, never from what this socket happened to do. Keying off a local
+      // variable meant an operator who claimed over HTTP, or whose socket dropped and reconnected,
+      // held control everywhere except here — the console said "you are driving" and every click
+      // was silently refused.
+      const leased = run.session.surfaceForCurrentController();
       if (!leased) return say({ type: "error", error: "claim an intervention before sending input" });
       await applyInput(msg as unknown as InputMessage, leased, run.session);
       say({ type: "ack", of: msg.type });

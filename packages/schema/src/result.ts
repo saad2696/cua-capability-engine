@@ -53,7 +53,7 @@ export type FailureCode = z.infer<typeof FailureCodeSchema>;
 
 export const EscalationReasonSchema = z.enum([
   "RISKY_STEP_NEEDS_APPROVAL", "AGENT_GAVE_UP", "LOOP_DETECTED", "MAX_STEPS_REACHED", "UNKNOWN_STATE",
-  "REPLAY_FAILURE", "OUTCOME_ESCALATE", "INTERVENTION_TIMEOUT",
+  "REPLAY_FAILURE", "OUTCOME_ESCALATE", "BUSINESS_OUTCOME_REVIEW", "INTERVENTION_TIMEOUT",
 ]);
 export type EscalationReason = z.infer<typeof EscalationReasonSchema>;
 

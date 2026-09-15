@@ -56,14 +56,15 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "extract",
     description:
-      "Record a value you can read on the current screen as a named output. Give the exact text as displayed and, when it sits in a table or next to a label, say where: the row label, the column header, or the adjacent label. The engine turns this into a deterministic re-read for replay.",
+      "Record a value you can read on the current screen as a named output. Give the exact text as displayed and, when it sits in a table or next to a label, say where: the row label, the column header, or the adjacent label. The engine turns this into a deterministic re-read for replay.\n\n" +
+      "Anchor on something that is the SAME for every record this capability will ever run against — a column header, a category like \"Savings\", a footer label like \"Total savings\". Never anchor on a value that belongs to this particular record: a nickname, a person's name, an account number. Those read correctly today and fail on the next record, because the anchor described this row rather than its position. If a total or subtotal is shown, prefer it over adding rows up yourself: the engine re-reads every value on replay, and a figure you computed has nowhere to be read back from.",
     input_schema: {
       type: "object",
       properties: {
         output: { type: "string", description: "camelCase output name, e.g. savingsBalance" },
         value: { type: "string", description: "The exact text as displayed, e.g. $1,234.56" },
         description: { type: "string", description: "What this value means to the caller." },
-        rowLabel: { type: "string", description: "Text that identifies the table row containing the value." },
+        rowLabel: { type: "string", description: "Text identifying the row — use a category or label that repeats across records (\"Savings\", \"Total savings\"), never this record's own data (a nickname, a name)." },
         columnHeader: { type: "string", description: "Header of the column containing the value." },
         nearLabel: { type: "string", description: "Label cell immediately left of the value." },
         reasoning: { type: "string" },

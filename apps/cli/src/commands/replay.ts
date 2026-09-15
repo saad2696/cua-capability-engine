@@ -1,6 +1,6 @@
 /**
  * cua replay <artifact.json> [--param k=v ...] [--plan] [--allow-draft] [--headed]
- *            [--fault <name>[:sticky]] [--escalate-on-failure] [--evidence-name <dir>] [--json]
+ *            [--fault <name>[:sticky]] [--escalate-on-failure] [--escalate-on-outcome] [--evidence-name <dir>] [--json]
  *
  * Deterministic replay: no model in the loop. Exit codes: success 0, business_outcome 0,
  * failure 2, escalated 3.
@@ -18,7 +18,7 @@ export async function replayCommand(argv: string[]): Promise<void> {
     args: argv, allowPositionals: true,
     options: {
       param: { type: "string", multiple: true, default: [] }, plan: { type: "boolean", default: false }, "allow-draft": { type: "boolean", default: false },
-      headed: { type: "boolean", default: false }, fault: { type: "string" }, "escalate-on-failure": { type: "boolean", default: false },
+      headed: { type: "boolean", default: false }, fault: { type: "string" }, "escalate-on-failure": { type: "boolean", default: false }, "escalate-on-outcome": { type: "boolean", default: false },
       "evidence-name": { type: "string" }, json: { type: "boolean", default: false }, "risky": { type: "string" },
       "resume-from": { type: "string" }, "timeout": { type: "string" },
     },
@@ -81,7 +81,8 @@ export async function replayCommand(argv: string[]): Promise<void> {
       artifact: raw, params, secrets, surface: guarded, evidence,
       globalPolicy: { allowedOrigins: policy.allowedOrigins },
       allowDraft: values["allow-draft"] || !doc.replay.requireApprovedArtifact, riskyStepsRequire: (values.risky as "approvedArtifact" | "humanConfirm" | "block" | undefined) ?? doc.replay.riskyStepsRequire,
-      escalateOnFailure: values["escalate-on-failure"] || doc.replay.escalateOnFailure, cookies,
+      escalateOnFailure: values["escalate-on-failure"] || doc.replay.escalateOnFailure,
+      escalateOnBusinessOutcome: values["escalate-on-outcome"], cookies,
       ...(values["resume-from"] ? { startAtStepIndex: Number(values["resume-from"]) } : {}),
       runTimeoutMs: values.timeout ? Number(values.timeout) : doc.runTimeoutMs,
       log: (line) => { if (!values.json) console.log(`  ${line}`); },

@@ -139,6 +139,20 @@ export class Session implements LeaseAuthority {
   }
 
   /** Hand a human their surface. Only valid from `paused`. */
+  /**
+   * A surface for the controller that already holds control, for a client that did not do the
+   * claiming itself — an operator who claimed over HTTP, or whose websocket dropped and came back.
+   *
+   * `claim()` cannot serve them: it throws on an intervention that is already claimed. Deriving the
+   * surface from the current lease instead means a reconnecting operator is as able to act as the
+   * one who claimed, and the surface still goes dead the moment control moves, because it carries
+   * the live lease id rather than a copy of it.
+   */
+  surfaceForCurrentController(): LeasedSurface | undefined {
+    if (this._state !== "human_control" || this._controller !== "human" || !this._lease) return undefined;
+    return new LeasedSurface(this.opts.surface, this._lease.id, "human", this);
+  }
+
   claim(interventionId: string, by: string): { surface: LeasedSurface; intervention: InterventionRequest } {
     const iv = this.interventions.get(interventionId);
     if (!iv) throw new Error(`no such intervention: ${interventionId}`);

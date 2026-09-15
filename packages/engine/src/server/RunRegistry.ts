@@ -61,6 +61,8 @@ export interface StartReplayInput {
   headless?: boolean;
   allowDraft?: boolean;
   escalateOnFailure?: boolean;
+  /** Put a business outcome to a human before returning it. */
+  escalateOnBusinessOutcome?: boolean;
   riskyStepsRequire?: "approvedArtifact" | "humanConfirm" | "block";
   runTimeoutMs?: number;
   interventionTimeoutMs?: number;
@@ -209,6 +211,7 @@ export class RunRegistry {
           // operator is already watching, and asking them is cheaper than failing. It never
           // loosens — a policy of `block` stays `block`.
           escalateOnFailure: input.escalateOnFailure ?? true,
+          escalateOnBusinessOutcome: input.escalateOnBusinessOutcome ?? false,
           riskyStepsRequire: input.riskyStepsRequire ?? (doc.replay.riskyStepsRequire === "block" ? "block" : "humanConfirm"),
           runTimeoutMs: input.runTimeoutMs ?? doc.runTimeoutMs,
           ...(input.stepDelayMs ? { stepDelayMs: input.stepDelayMs } : {}),

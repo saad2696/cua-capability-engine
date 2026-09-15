@@ -38,6 +38,22 @@ export function memberPage(opts: PageOpts & { member: Member }): string {
         <td class="c2" align="right">${esc(formatMoney(a.balanceCents))}</td><td class="c2">${esc(a.opened)}</td></tr>`,
     )
     .join("");
+  // Real core banking screens foot their ledgers, and an automation that has to add up rows itself
+  // cannot be verified: every value a capability returns is re-read from the page on replay, so a
+  // number that exists only in the model's head has nowhere to be read back from. Putting the
+  // subtotals on the screen is what makes "the total savings" a capability rather than a guess.
+  // Deliberately not colspan'd: the table-cell strategy addresses a column by index, and a merged
+  // cell would shift the balance out from under the "Current Balance" header.
+  const sum = (of?: Account["type"]) => m.accounts.filter((a) => !of || a.type === of).reduce((t, a) => t + a.balanceCents, 0);
+  const totalRow = (label: string, cents: number) =>
+    `<tr class="row"><td class="c2"></td><td class="c2"></td><td class="c2"><b>${esc(label)}</b></td>
+      <td class="c2" align="right"><b>${esc(formatMoney(cents))}</b></td><td class="c2"></td></tr>`;
+  const totals = [
+    ...(m.accounts.some((a) => a.type === "Checking") ? [totalRow("Total checking", sum("Checking"))] : []),
+    ...(m.accounts.some((a) => a.type === "Savings") ? [totalRow("Total savings", sum("Savings"))] : []),
+    totalRow("Total balance", sum()),
+  ].join("");
+
   return page("Member Detail", `
 <table class="box" cellpadding="0" cellspacing="0" width="640">
   <tr><td class="hdr" colspan="4">Member Detail</td></tr>
@@ -50,6 +66,7 @@ export function memberPage(opts: PageOpts & { member: Member }): string {
   <tr><td class="hdr" colspan="5">Accounts</td></tr>
   <tr><td class="c1">Account</td><td class="c1">Type</td><td class="c1">Nickname</td><td class="c1" align="right">Current Balance</td><td class="c1">Opened</td></tr>
   ${rows}
+  ${totals}
 </table>
 <br>
 <table cellpadding="0" cellspacing="0"><tr>

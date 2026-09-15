@@ -52,6 +52,9 @@ export default function Artifacts({ onError }) {
   const [file, setFile] = useState("");
   const [cap, setCap] = useState();
   const [busy, setBusy] = useState(false);
+  // Two-step rather than a browser confirm(): a native dialog would block the page, and this
+  // console exists partly to demonstrate how badly one of those goes.
+  const [confirming, setConfirming] = useState(false);
 
   useEffect(() => {
     if (!file && list?.length) setFile(list[list.length - 1].file);
@@ -60,6 +63,21 @@ export default function Artifacts({ onError }) {
   useEffect(() => {
     if (file) api.artifact(file).then(setCap, (e) => onError(e.message));
   }, [file, onError]);
+
+  const remove = async (force) => {
+    setBusy(true);
+    try {
+      await api.deleteArtifact(file, force);
+      setConfirming(false);
+      setFile("");
+      setCap(undefined);
+      // The list polls, so it drops the row on its own within a few seconds.
+    } catch (e) {
+      onError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const approve = async () => {
     setBusy(true);
@@ -80,14 +98,21 @@ export default function Artifacts({ onError }) {
       <aside>
         <h3>Capabilities</h3>
         <ul className="artifacts__list">
-          {list.map((a) => (
-            <li key={a.file}>
-              <button className={file === a.file ? "link link--on" : "link"} onClick={() => setFile(a.file)}>
-                {a.id}@{a.version}
-              </button>
-              <span className={`pill pill--${a.status}`}>{a.status}</span>
-            </li>
-          ))}
+          {list.map((a) => {
+            // Two rows with the same name read as a duplicate when they are a version history, so
+            // the older ones say so. Superseded is not the same as obsolete: an earlier version is
+            // what a past run was recorded against, and its evidence still points at it.
+            const superseded = list.some((b) => b.id === a.id && b.version > a.version);
+            return (
+              <li key={a.file} className={superseded ? "is-superseded" : undefined}>
+                <button className={file === a.file ? "link link--on" : "link"} onClick={() => setFile(a.file)}>
+                  {a.id} <span className="ver">v{a.version}</span>
+                </button>
+                <span className={`pill pill--${a.status}`}>{a.status}</span>
+                {superseded && <span className="muted note-sup">superseded by v{Math.max(...list.filter((b) => b.id === a.id).map((b) => b.version))}</span>}
+              </li>
+            );
+          })}
         </ul>
       </aside>
 
@@ -107,6 +132,26 @@ export default function Artifacts({ onError }) {
                 <span className="muted">A draft can only be replayed with an explicit override.</span>
               </p>
             )}
+            <p className="danger-row">
+              {!confirming ? (
+                <button className="link danger" disabled={busy} onClick={() => setConfirming(true)}>
+                  Delete this capability
+                </button>
+              ) : (
+                <>
+                  <span className="muted">
+                    Delete {file}? {cap.capability.status === "approved" ? "It is approved, and this cannot be undone here." : "This cannot be undone here."}
+                  </span>{" "}
+                  <button className="danger" disabled={busy} onClick={() => remove(cap.capability.status === "approved")}>
+                    Yes, delete
+                  </button>{" "}
+                  <button className="link" disabled={busy} onClick={() => setConfirming(false)}>
+                    cancel
+                  </button>
+                </>
+              )}
+            </p>
+
             {cap.provenance?.approvedBy && (
               <p className="muted">
                 approved by {cap.provenance.approvedBy} at {cap.provenance.approvedAt}

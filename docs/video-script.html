@@ -70,8 +70,10 @@ lsof -ti:4100,4200,4300 | xargs kill -9 2>/dev/null
 # 2. the live-learn goal must NOT exist yet (shot 7 depends on this)
 rm -f artifacts/member-branch-and-tenure@1.json
 
-# 3. check state: G1@2 must be draft, G2@1 must be approved
+# 3. undo any approvals a rehearsal left behind, then check the state
+git checkout -- artifacts/
 grep -o '"status": "[a-z]*"' artifacts/*.json
+#    expect: open-subaccount approved, savings-balance@1 and @2 draft
 
 # 4. health check, then start everything
 pnpm cua doctor          # expect 8 ok, 1 warning, 0 failures
@@ -257,7 +259,7 @@ ls evidence/</code></pre>
 <table>
   <tr><th style="width:34%">Symptom</th><th>Cause and fix</th></tr>
   <tr><td>Engine exits immediately on <code>pnpm demo</code></td><td>Stale process on 4200. <code>lsof -ti:4100,4200,4300 | xargs kill -9</code>, then restart.</td></tr>
-  <tr><td>Shot 4 does not refuse</td><td><code>member-savings-balance@2</code> is already approved from a rehearsal. Set <code>"status": "draft"</code> and remove <code>approvedBy</code>/<code>approvedAt</code> from <code>provenance</code>.</td></tr>
+  <tr><td>Shot 4 does not refuse</td><td><code>member-savings-balance@2</code> was approved in a rehearsal — approving rewrites the file on disk. <code>git checkout -- artifacts/</code> puts it back. (A test asserts this, so a committed approval fails the suite rather than surprising you here.)</td></tr>
   <tr><td>Shot 6 finishes before you can click</td><td>Pace was left at Full speed. Restart with <em>Watchable</em>.</td></tr>
   <tr><td>Shot 7 says the capability already exists</td><td>You rehearsed it. <code>rm -f artifacts/member-branch-and-tenure@1.json</code> and delete its <code>evidence/run-*</code> directory.</td></tr>
   <tr><td>Confirmation number is not CU-700001</td><td>Expected — it climbs within a session. Restarting the target app resets it. Say so; it proves the run committed.</td></tr>

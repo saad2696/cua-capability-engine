@@ -73,6 +73,32 @@ describe("pre-flight (no browser)", () => {
   });
 });
 
+/**
+ * The shipped artifacts are fixtures as well as deliverables, and the demo mutates them: approving
+ * a capability in the console rewrites the file on disk. Committing that state turns several tests
+ * below into failures whose cause is nowhere near the assertion that fails — a risky step stops
+ * escalating, and a draft stops being refused. Asserting it here makes the cause obvious.
+ *
+ * If this fails after a demo: `git checkout -- artifacts/`.
+ */
+describe("the shipped artifacts are in the state the tests and the demo expect", () => {
+  const status = (file: string) =>
+    (JSON.parse(readFileSync(new URL(`../../../../artifacts/${file}`, import.meta.url), "utf8")) as { capability: { status: string } }).capability.status;
+
+  it("member-savings-balance stays a draft", () => {
+    // Draft is load-bearing twice over: the approval-gate tests need something to refuse, and the
+    // walkthrough opens on that refusal.
+    expect(status("member-savings-balance@2.json"), "approved in the console and committed? run: git checkout -- artifacts/").toBe("draft");
+    expect(status("member-savings-balance@1.json")).toBe("draft");
+  });
+
+  it("member-open-subaccount stays approved", () => {
+    // The committing capability ships approved on purpose: it is what lets the demo show an
+    // unattended replay actually opening an account.
+    expect(status("member-open-subaccount@1.json")).toBe("approved");
+  });
+});
+
 describe("happy path", () => {
   it("replays G1 and returns the typed output with no drift", async () => {
     const { result, events } = await run(fixture(), { memberId: "10042" });

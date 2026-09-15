@@ -17,6 +17,7 @@ const json = async (res) => {
 const get = (path) => fetch(path).then(json);
 const post = (path, body) =>
   fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body ?? {}) }).then(json);
+const del = (path) => fetch(path, { method: "DELETE" }).then(json);
 
 export const api = {
   health: () => get("/api/health"),
@@ -41,6 +42,9 @@ export const api = {
   artifacts: () => get("/api/artifacts"),
   artifact: (file) => get(`/api/artifacts/${file}`),
   approve: (file, by) => post(`/api/artifacts/${file}/approve`, { by }),
+  // `force` is the operator saying they meant it: the server refuses to delete an approved
+  // capability without it, and refuses outright while a run is using one.
+  deleteArtifact: (file, force = false) => del(`/api/artifacts/${file}${force ? "?force=true" : ""}`),
 };
 
 /**

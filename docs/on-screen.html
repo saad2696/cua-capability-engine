@@ -1,0 +1,214 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>CUA Capability Engine — on-screen companion</title>
+<style>
+  :root{--bg:#0e1116;--panel:#161b23;--line:#242c38;--ink:#e6edf6;--mute:#8b98a9;--acc:#4da3ff;--ok:#3fbf7f;--warn:#e0a54a;--bad:#e06a6a;}
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--ink);font:18px/1.55 -apple-system,"Segoe UI",Helvetica,Arial,sans-serif}
+  header{position:sticky;top:0;z-index:5;background:rgba(14,17,22,.94);backdrop-filter:blur(6px);border-bottom:1px solid var(--line);padding:10px 28px;display:flex;gap:18px;align-items:baseline;flex-wrap:wrap}
+  header b{font-size:17px;letter-spacing:.2px}
+  nav a{color:var(--mute);text-decoration:none;font-size:14px}
+  nav a:hover{color:var(--acc)}
+  section{max-width:1180px;margin:0 auto;padding:44px 28px 8px;scroll-margin-top:60px}
+  h1{font-size:44px;line-height:1.1;margin:.2em 0 .1em;letter-spacing:-.5px}
+  h2{font-size:30px;margin:0 0 18px;letter-spacing:-.3px}
+  h2 .n{color:var(--acc);font-size:15px;display:block;text-transform:uppercase;letter-spacing:.16em;margin-bottom:4px}
+  h3{font-size:20px;color:var(--acc);margin:26px 0 8px}
+  p{margin:.5em 0;max-width:80ch}
+  .lede{font-size:22px;color:#cfe0f5;max-width:74ch}
+  .mute{color:var(--mute)}
+  .grid{display:grid;gap:14px;margin:16px 0}
+  .g3{grid-template-columns:repeat(3,1fr)}
+  .g2{grid-template-columns:repeat(2,1fr)}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px 18px}
+  .card h4{margin:0 0 6px;font-size:17px}
+  .card p{font-size:15.5px;color:#c6d3e4;margin:.3em 0}
+  table{width:100%;border-collapse:collapse;margin:14px 0;font-size:16px}
+  th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--mute);font-weight:600;font-size:14px;text-transform:uppercase;letter-spacing:.08em}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.92em;background:#1d2530;padding:2px 6px;border-radius:5px;color:#d8e6f7}
+  .pill{display:inline-block;font-size:13px;padding:2px 10px;border-radius:999px;border:1px solid}
+  .ok{color:var(--ok);border-color:#1f5e42}.warn{color:var(--warn);border-color:#6b4d1d}.bad{color:var(--bad);border-color:#6b2b2b}
+  .big{font-size:26px;font-weight:600}
+  .mermaid{background:#f7f9fc;border-radius:10px;padding:14px;margin:18px 0}
+  ul{max-width:84ch}li{margin:6px 0}
+  .quiet{font-size:15px;color:var(--mute)}
+  footer{max-width:1180px;margin:40px auto 70px;padding:0 28px;color:var(--mute);font-size:15px}
+</style>
+
+<header>
+  <b>Computer-Use Automation System</b>
+  <nav>
+    <a href="#problem">Problem</a> ·
+    <a href="#how">How</a> ·
+    <a href="#caps">Capabilities</a> ·
+    <a href="#errors">Error handling</a> ·
+    <a href="#human">Human in the loop</a> ·
+    <a href="#safety">Safety</a> ·
+    <a href="#extra">Beyond the brief</a> ·
+    <a href="#limits">Limits</a>
+  </nav>
+</header>
+
+<section id="top">
+  <h1>An LLM learns the task once.<br>The recording runs it forever.</h1>
+  <p class="lede">A model works out how to do a job in a legacy banking UI, once. What it learned becomes a
+  typed, versioned <b>capability artifact</b> — which then replays deterministically, in about two
+  seconds, <b>with no model in the loop</b>. Anything irreversible, or anything it has not seen
+  before, stops and hands a person the same live browser session.</p>
+</section>
+
+<section id="problem">
+  <h2><span class="n">The problem</span>Three things you want, in tension</h2>
+  <div class="grid g3">
+    <div class="card"><h4>Flexibility</h4><p>A UI nobody documented. No API, no test ids, framesets and table layouts.</p><p class="quiet">→ argues for an LLM driving live</p></div>
+    <div class="card"><h4>Determinism</h4><p>Same input, same result, every time, auditable by someone who wasn't there.</p><p class="quiet">→ argues against a model anywhere near the hot path</p></div>
+    <div class="card"><h4>Safety</h4><p>Some actions move money and cannot be undone.</p><p class="quiet">→ argues for a human, but a human on every run is not automation</p></div>
+  </div>
+  <p class="big">The decision that resolves it: <span style="color:var(--acc)">the model is a compiler, not a runtime.</span></p>
+</section>
+
+<section id="how">
+  <h2><span class="n">How it works</span>The life of a capability</h2>
+  <pre class="mermaid">
+flowchart LR
+  Goal["Goal sentence<br/>plain English"] --> Agent
+  Agent["Discovery loop<br/>observe → decide → act"] <-->|"tool calls"| LLM["Claude Sonnet 5<br/>the ONLY model edge"]
+  Agent --> Rec["Recorder<br/>prunes detours"]
+  Rec --> Art[("Capability artifact<br/>typed · versioned · draft")]
+  Art --> Review{"Human review"}
+  Review -->|"approve"| Replay["Replay executor<br/>NO model · ~2s"]
+  Review -->|"reject"| Bin["back to discovery"]
+  Replay --> Out["success · business_outcome<br/>failure · escalated"]
+  Replay -.->|"risky step or unknown state"| Op["Operator takes the<br/>SAME live session"]
+  Op -.->|"hand back"| Replay
+  </pre>
+  <p>Claude sits on exactly one edge, at authoring time. Everything to the right of the artifact runs
+  without it — no API call, no cost, no variance.</p>
+</section>
+
+<section id="caps">
+  <h2><span class="n">What it can do</span>Three capabilities</h2>
+  <table>
+    <tr><th>Capability</th><th>What it does</th><th>What it proves</th></tr>
+    <tr><td><code>member-savings-balance</code> <span class="pill ok">read-only</span></td>
+        <td>Sign in, search a member, read the savings balance.</td>
+        <td>The core loop. 7 steps, ~2s, no model. Run it for another member and the answer changes.</td></tr>
+    <tr><td><code>member-open-subaccount</code> <span class="pill bad">commits</span></td>
+        <td>Open a sub-account: fill, validate, confirm, read the confirmation number.</td>
+        <td>The guardrails. Two steps marked <i>risky · point of no return</i>. Replay really opens an account.</td></tr>
+    <tr><td><code>member-total-savings</code> <span class="pill warn">learned live</span></td>
+        <td>Report the Total savings figure from the Accounts table.</td>
+        <td>It generalises — learned <b>on camera</b> from one English sentence, in ~25 seconds for ~$0.07.</td></tr>
+  </table>
+</section>
+
+<section id="errors">
+  <h2><span class="n">Error handling</span>Every run ends in one of four shapes</h2>
+  <table>
+    <tr><th>Outcome</th><th>Exit</th><th>Meaning · who acts</th></tr>
+    <tr><td><span class="pill ok">success</span></td><td><code>0</code></td><td>Done. Typed outputs returned.</td></tr>
+    <tr><td><span class="pill ok">business_outcome</span></td><td><code>0</code></td><td>The <b>application</b> legitimately said no — no such member, not authorised. <b>The automation worked.</b> Nobody is paged.</td></tr>
+    <tr><td><span class="pill bad">failure</span></td><td><code>2</code></td><td>Could not proceed. Always carries a bundle: narrative, screenshots, a11y snapshot, page text.</td></tr>
+    <tr><td><span class="pill warn">escalated</span></td><td><code>3</code></td><td>A human is needed.</td></tr>
+  </table>
+  <div class="grid g2">
+    <div class="card"><h4>Recovered silently, and bounded</h4>
+      <p><code>SESSION_EXPIRED</code> re-runs the login prelude · <code>SERVER_ERROR</code> reloads ·
+      a <i>declared</i> dialog is dismissed · slowness is tolerated and flagged.</p>
+      <p><code>RECOVERY_LOOP</code> is the guard: the same condition twice at the same step stops the run.</p></div>
+    <div class="card"><h4>Refused before a browser opens</h4>
+      <p><code>INVALID_INPUT</code> · <code>MISSING_SECRET</code> · <code>ARTIFACT_NOT_APPROVED</code> ·
+      <code>POLICY_VIOLATION</code>.</p>
+      <p>A bad call costs milliseconds, and <code>stepsRun: 0</code> proves nothing touched the application.</p></div>
+  </div>
+</section>
+
+<section id="human">
+  <h2><span class="n">Human in the loop</span>Take over the same live session</h2>
+  <div class="grid g3">
+    <div class="card"><h4>It stops by itself</h4><p>A risky step, an undeclared dialog, an unknown screen. It never guesses.</p></div>
+    <div class="card"><h4>You drive its browser</h4><p>Same cookies, same frames, same scroll position — streamed over a websocket, your clicks forwarded back.</p></div>
+    <div class="card"><h4>It resumes mid-flow</h4><p>A handover run finishes in <b>7 steps</b> — the same as an uninterrupted one. It resumed; it did not restart.</p></div>
+  </div>
+  <p>Exactly one controller holds a lease at a time. Acting without one is a logged
+  <code>CONTROL_VIOLATION</code>. Time parked in an intervention does not count against the run budget.</p>
+</section>
+
+<section id="safety">
+  <h2><span class="n">Safety</span>One policy file, four gates</h2>
+  <table>
+    <tr><th>Layer</th><th>Why the one above it is not enough</th></tr>
+    <tr><td>1 · Decision</td><td>—</td></tr>
+    <tr><td>2 · Surface boundary</td><td><b>Replay has no model</b>, so layer 1 never runs on the path that runs most often.</td></tr>
+    <tr><td>3 · Network</td><td>A redirect or injected asset moves the session without any engine code asking.</td></tr>
+    <tr><td>4 · Pre-flight</td><td>An artifact travels between environments; its policy must be a subset of the one in force.</td></tr>
+  </table>
+  <p>Everything the engine may do lives in one validated <code>policy.yaml</code>. Unknown keys are
+  rejected — a misspelled control that silently enforces nothing is worse than a startup error.
+  A human who takes control is <b>not</b> blocked; they are recorded as <code>policy_override</code>.</p>
+</section>
+
+<section id="extra">
+  <h2><span class="n">Beyond the brief</span>Things I built that weren't asked for</h2>
+
+  <h3>Because the interesting behaviour is failure</h3>
+  <div class="grid g2">
+    <div class="card"><h4>A mock core banking system, with fault injection</h4>
+      <p>Framesets, table layouts, no test ids, a native <code>confirm()</code> at the point of no return —
+      and eight faults armable <i>inside a running browser</i>, so recovery is demonstrated rather than described.</p></div>
+    <div class="card"><h4>Business outcome ≠ failure</h4>
+      <p>"No such member" is an answer, not an error: exit 0 with a typed code. If that paged someone at
+      3am, people would start ignoring the alerts.</p></div>
+  </div>
+
+  <h3>Because an artifact has to survive the UI changing</h3>
+  <div class="grid g3">
+    <div class="card"><h4>Ranked locator fallbacks</h4><p>role+name → css → visual position, each with the recorder's rationale. XPath rejected: it encodes exactly what a redesign changes.</p></div>
+    <div class="card"><h4>Drift as early warning</h4><p>Matching on a fallback emits <code>drift</code>; a control that moved emits <code>visual_drift</code>. Neither fails the run.</p></div>
+    <div class="card"><h4>Screen signatures</h4><p>A step asserts URL + <i>N of M</i> landmarks before acting, so it refuses the wrong screen instead of clicking blindly.</p></div>
+  </div>
+
+  <h3>Because someone has to trust it later</h3>
+  <div class="grid g3">
+    <div class="card"><h4>Evidence for every run</h4><p><code>events.jsonl</code>, before/after screenshots, Playwright trace, and a failure bundle with a narrative naming expected vs observed state.</p></div>
+    <div class="card"><h4>Approval gate with provenance</h4><p>Unattended replay refuses a draft. Approving records who and when.</p></div>
+    <div class="card"><h4><code>cua doctor</code></h4><p>Asks <b>git</b>, not <code>.gitignore</code>, whether a secret is tracked — and whether one was ever committed, because deleting it later doesn't help.</p></div>
+  </div>
+
+  <h3>Because the operator is part of the system</h3>
+  <div class="grid g3">
+    <div class="card"><h4>Live viewport, not screenshots</h4><p>Frames streamed from the automation's own browser, with clicks and keystrokes forwarded back.</p></div>
+    <div class="card"><h4>Console writes capabilities too</h4><p>Type a goal in plain English; parameters are read out of the <code>{braces}</code> you type.</p></div>
+    <div class="card"><h4>Optional review of a "no"</h4><p>A business outcome can pause for a human instead of returning — off by default, because a batch must not stall on a legitimate no.</p></div>
+  </div>
+
+  <h3>Findings that only appear when you run the real thing</h3>
+  <ul>
+    <li><b>A whole goal was impossible, with the suite green.</b> The app takes its final approval with a native <code>confirm()</code>; the model had no tool that could answer one. Adding it exposed five further defects, each producing a plausible wrong answer rather than a crash.</li>
+    <li><b>A monitoring signal that fired on a page that had not changed.</b> Visual drift used box overlap; legacy buttons are ~37×14px and it collapsed at that scale. Found by reading the evidence of a <i>passing</i> run.</li>
+    <li><b>An anchor that only worked for one member.</b> The model anchored a value to an account <i>nickname</i>. It read fine for Alex Sample and failed on the next member — caught by replay, by name, in two seconds.</li>
+    <li><b>Three redaction leaks</b>, the last fixed by a test that walks <i>every file a run writes</i> rather than the ones someone remembered.</li>
+  </ul>
+</section>
+
+<section id="limits">
+  <h2><span class="n">Honest limits</span>What it does not do</h2>
+  <div class="grid g2">
+    <div class="card"><h4>Screenshots are not masked</h4><p>They render whatever was on screen. Structured evidence <i>is</i> redacted and tested — but a grep cannot see inside a PNG, so the schema pins that flag to <code>false</code> rather than letting a deployment claim otherwise.</p></div>
+    <div class="card"><h4>One operator, loopback only</h4><p>The console has no authentication. <code>approvedBy</code> is already in the record for the identity that would replace the assumption.</p></div>
+    <div class="card"><h4>Multi-tenant is designed, not built</h4><p>An artifact carries the origins it was recorded against and pre-flight refuses anything else — so a different origin is already a different tenant.</p></div>
+    <div class="card"><h4>No arithmetic in replay</h4><p>Every output must be re-readable from the page, so the engine reads a total the application shows rather than summing rows itself. A <code>derive</code> step is the next thing I'd build.</p></div>
+  </div>
+</section>
+
+<footer>
+  156 engine &amp; CLI tests + 10 console tests, all against the real mock app and a real browser ·
+  16 evidence directories · discovery ~$0.07 and 25s · replay ~2s and $0
+</footer>
+
+<script type="module">
+  import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+  mermaid.initialize({ startOnLoad: true, theme: "neutral", flowchart: { useMaxWidth: true } });
+</script>

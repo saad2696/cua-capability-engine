@@ -3,7 +3,7 @@
   "capability": {
     "id": "member-savings-balance",
     "version": 1,
-    "status": "approved",
+    "status": "draft",
     "name": "Look up member {memberId} and read the current balance of their Savings account.",
     "description": "Look up member {memberId} and read the current balance of their Savings account.",
     "summary": [
@@ -900,8 +900,6 @@
     "provider": "anthropic",
     "model": "claude-sonnet-5",
     "runId": "discover-2026-09-10191-b88ca3",
-    "redacted": true,
-    "approvedBy": "operator-1",
-    "approvedAt": "2026-09-15T17:19:42.733Z"
+    "redacted": true
   }
 }

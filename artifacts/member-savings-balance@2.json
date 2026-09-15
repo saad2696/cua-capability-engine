@@ -3,7 +3,7 @@
   "capability": {
     "id": "member-savings-balance",
     "version": 2,
-    "status": "approved",
+    "status": "draft",
     "name": "Look up member {memberId} and read the current balance of their Savings account.",
     "description": "Look up member {memberId} and read the current balance of their Savings account.",
     "summary": [
@@ -108,7 +108,7 @@
             "kind": "landmarkVisible",
             "landmark": {
               "role": "text",
-              "name": "Legacy CU Core — Sign In",
+              "name": "Legacy CU Core \u2014 Sign In",
               "exact": true
             },
             "frame": [
@@ -189,7 +189,7 @@
           "landmarks": [
             {
               "role": "text",
-              "name": "Legacy CU Core — Sign In",
+              "name": "Legacy CU Core \u2014 Sign In",
               "exact": true
             },
             {
@@ -297,7 +297,7 @@
           "landmarks": [
             {
               "role": "text",
-              "name": "Legacy CU Core — Sign In",
+              "name": "Legacy CU Core \u2014 Sign In",
               "exact": true
             },
             {
@@ -401,7 +401,7 @@
           "landmarks": [
             {
               "role": "text",
-              "name": "Legacy CU Core — Sign In",
+              "name": "Legacy CU Core \u2014 Sign In",
               "exact": true
             },
             {
@@ -530,7 +530,7 @@
         "landmarks": [
           {
             "role": "text",
-            "name": "Legacy CU Core — Member Search",
+            "name": "Legacy CU Core \u2014 Member Search",
             "exact": true
           },
           {
@@ -629,7 +629,7 @@
         "landmarks": [
           {
             "role": "text",
-            "name": "Legacy CU Core — Member Search",
+            "name": "Legacy CU Core \u2014 Member Search",
             "exact": true
           },
           {
@@ -661,7 +661,7 @@
           "kind": "landmarkVisible",
           "landmark": {
             "role": "text",
-            "name": "Legacy CU Core — Member Detail",
+            "name": "Legacy CU Core \u2014 Member Detail",
             "exact": true
           },
           "frame": [
@@ -673,7 +673,7 @@
         "for": "landmark",
         "landmark": {
           "role": "text",
-          "name": "Legacy CU Core — Member Detail",
+          "name": "Legacy CU Core \u2014 Member Detail",
           "exact": true
         },
         "frame": [
@@ -713,7 +713,7 @@
         "landmarks": [
           {
             "role": "text",
-            "name": "Legacy CU Core — Member Detail",
+            "name": "Legacy CU Core \u2014 Member Detail",
             "exact": true
           },
           {
@@ -751,7 +751,7 @@
       "kind": "landmarkVisible",
       "landmark": {
         "role": "text",
-        "name": "Legacy CU Core — Member Detail",
+        "name": "Legacy CU Core \u2014 Member Detail",
         "exact": true
       },
       "frame": [
@@ -906,8 +906,6 @@
     "provider": "anthropic",
     "model": "claude-sonnet-5",
     "runId": "discover-2026-09-10191-b88ca3",
-    "redacted": true,
-    "approvedBy": "operator-1",
-    "approvedAt": "2026-09-15T17:19:37.949Z"
+    "redacted": true
   }
 }

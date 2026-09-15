@@ -398,6 +398,43 @@ describe("an error the engine cannot handle becomes a handover", () => {
   }, 150_000);
 });
 
+describe("input reaches the browser whoever did the claiming", () => {
+  it("an operator who claimed over HTTP can drive from a socket opened afterwards", async () => {
+    // The socket used to keep the leased surface in a local variable set only by its own `claim`
+    // message. Claim over HTTP — or drop and reconnect — and the console said "you are driving"
+    // while every click was silently refused, with humanActions stuck at zero.
+    const started = await (await post("/api/replay", { artifact: await artifact(), params: { memberId: "10042" }, pauseAtStart: true })).json() as { id: string };
+    const iv = await until(async () => {
+      const r = await runOf(started.id);
+      return r.session.interventions.find((i: { status: string }) => i.status === "open");
+    }) as { id: string };
+
+    await post(`/api/interventions/${iv.id}/claim`, { by: "operator-1" });
+
+    const ws = new WebSocket(`ws://127.0.0.1:${api.port}/ws/runs/${started.id}/live`);
+    const seen: Record<string, unknown>[] = [];
+    ws.on("message", (d) => {
+      const m = JSON.parse(String(d)) as Record<string, unknown>;
+      if (m["type"] !== "frame") seen.push(m);
+    });
+    await new Promise((r) => ws.once("open", r));
+
+    // The greeting has to say so, or a reconnecting console leaves the cursor disabled.
+    const hello = (await until(async () => seen.find((m) => m["type"] === "hello"))) as { controlled: boolean };
+    expect(hello.controlled).toBe(true);
+
+    ws.send(JSON.stringify({ type: "mouse", op: "click", x: 40, y: 40 }));
+    const reply = (await until(async () => seen.find((m) => m["type"] === "ack" || m["type"] === "error"))) as { type: string; error?: string };
+    expect(reply.error ?? reply.type).toBe("ack");
+
+    const after = await runOf(started.id);
+    expect(after.session.humanActions).toBeGreaterThan(0);
+
+    ws.close();
+    await post(`/api/runs/${started.id}/abort`, {});
+  }, 120_000);
+});
+
 describe("a run that cannot start", () => {
   it("answers 400 with the issues when policy.yaml is invalid, rather than 500 with a stack", async () => {
     // The likeliest failure during a demo is someone editing policy.yaml and mistyping it. That has

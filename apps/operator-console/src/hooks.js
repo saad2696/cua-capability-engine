@@ -87,6 +87,10 @@ export function useLiveSession(runId, { by = "operator-1" } = {}) {
     let live = true;
     const l = openLiveSocket(runId, {
       open: () => live && setConnected(true),
+      // The server tells us on connect whether this session is already under human control, so an
+      // operator who claimed over HTTP — or whose socket dropped and came back — gets the cursor
+      // rather than a viewport that looks live and swallows every click.
+      hello: (m) => live && setControlled(Boolean(m.controlled)),
       close: () => {
         if (!live) return;
         setConnected(false);

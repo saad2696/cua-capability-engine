@@ -122,12 +122,18 @@ pnpm cua discover \
   --evidence-name discovery-g1-savings-balance
 #    -> artifacts/member-savings-balance@1.json, evidence/discovery-g1-savings-balance/
 
-# 3. deterministic replay: no model, no network, same answer
-pnpm cua replay artifacts/member-savings-balance@2.json --param memberId=10042 --allow-draft
+# 3. replay what step 2 just recorded: no model, no network, same answer, about two seconds
+pnpm cua replay artifacts/member-savings-balance@1.json --param memberId=10042 --allow-draft
 #    -> SUCCESS  outputs: {"savingsBalance":{"amount":1234.56,"currency":"USD"}}   exit 0
 
-# 4. the same artifact, a different member — parameters are real
-pnpm cua replay artifacts/member-savings-balance@2.json --param memberId=10077 --allow-draft
+# 4. the same artifact, a different member — the parameter is real, not baked into the recording
+pnpm cua replay artifacts/member-savings-balance@1.json --param memberId=10077 --allow-draft
+#    -> SUCCESS  outputs: {"savingsBalance":{"amount":8900.04,"currency":"USD"}}   exit 0
+
+# --allow-draft is doing work here: discovery produces a *draft*, and unattended replay refuses one.
+# Drop the flag to see the gate, then approve it on the console's Capabilities page:
+pnpm cua replay artifacts/member-savings-balance@1.json --param memberId=10042
+#    -> FAILURE ARTIFACT_NOT_APPROVED   (0 steps, 3ms — it does not even open a browser)
 
 # 5. the control plane: runs, live events, interventions, take-control
 pnpm cua serve

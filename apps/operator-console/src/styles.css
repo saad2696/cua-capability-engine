@@ -228,3 +228,14 @@ section header { display: flex; justify-content: space-between; align-items: bas
 .lightbox__bar { display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 0.5rem 0.8rem; max-width: 100%; }
 .lightbox__actions { display: flex; gap: 0.4rem; align-items: center; margin-left: auto; }
 .lightbox img { max-width: 100%; max-height: calc(100vh - 8rem); object-fit: contain; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
+
+/* Deleting a capability is the one destructive thing this console can do, so it is styled to look
+   like it rather than sitting next to Approve as an equal. */
+.danger-row { margin-top: 0.6rem; font-size: 0.88rem; }
+button.danger { background: #5b1d1d; border: 1px solid #8c2f2f; color: #ffd9d9; border-radius: 6px; padding: 0.3rem 0.7rem; }
+button.danger:hover:not(:disabled) { background: #742525; }
+.link.danger { color: #e08c8c; background: none; border: none; padding: 0; cursor: pointer; }
+
+.artifacts__list .ver { opacity: 0.75; font-variant-numeric: tabular-nums; }
+.artifacts__list .is-superseded .link { opacity: 0.6; }
+.artifacts__list .note-sup { display: block; font-size: 0.75rem; margin-top: 0.1rem; }

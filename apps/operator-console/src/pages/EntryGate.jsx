@@ -29,6 +29,7 @@ export default function EntryGate({ demo, onError }) {
   const [provider, setProvider] = useState("fake");
   const [fault, setFault] = useState("");
   const [pauseAtStart, setPauseAtStart] = useState(false);
+  const [reviewOutcomes, setReviewOutcomes] = useState(false);
   const [pace, setPace] = useState(0);
   const [busy, setBusy] = useState(false);
 
@@ -83,7 +84,7 @@ export default function EntryGate({ demo, onError }) {
       const run =
         mode === "discover"
           ? await api.startDiscovery({ goal: goal.goal, url, capabilityId: goal.capabilityId, params, provider: provider === "fake" ? "fake" : undefined, maxSteps: 24 })
-          : await api.startReplay({ artifactPath: file, params, pauseAtStart, ...(pace ? { stepDelayMs: pace } : {}), ...(fault ? { fault: { name: fault } } : {}) });
+          : await api.startReplay({ artifactPath: file, params, pauseAtStart, escalateOnBusinessOutcome: reviewOutcomes, ...(pace ? { stepDelayMs: pace } : {}), ...(fault ? { fault: { name: fault } } : {}) });
       go(`/runs/${run.id}`);
     } catch (e) {
       onError(e.message);
@@ -227,6 +228,16 @@ export default function EntryGate({ demo, onError }) {
                 also the cautious way to run a capability for the first time.
               </small>
             </label>
+
+            <label className="check">
+              <input type="checkbox" checked={reviewOutcomes} onChange={(e) => setReviewOutcomes(e.target.checked)} />
+              Let me look before it returns a business outcome
+            </label>
+            <small className="muted">
+              A business outcome — no such member, not authorised — is a legitimate answer, so by default the run
+              returns it and exits 0. Tick this and it stops and hands you the browser first, which is what you want
+              when someone is watching and a &quot;no&quot; is worth checking.
+            </small>
 
             <label>
               Break something (optional)

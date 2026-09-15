@@ -43,6 +43,14 @@ export interface ReplayOptions {
   allowDraft?: boolean;
   riskyStepsRequire?: "approvedArtifact" | "humanConfirm" | "block";
   escalateOnFailure?: boolean;
+  /**
+   * Offer a business outcome to a human before returning it. Off by default, because a business
+   * outcome is a legitimate answer — "no such member" means the automation worked — and pausing an
+   * unattended batch on every legitimate no would turn a capability back into a manual process.
+   * Worth switching on when a person is watching and a "no" is worth a second look: a mistyped id,
+   * a member who moved branch, a permission that should have been granted.
+   */
+  escalateOnBusinessOutcome?: boolean;
   runTimeoutMs?: number;
   slowThresholdMs?: number;
   /**
@@ -89,6 +97,8 @@ interface RunState {
   sideEffects: SideEffects;
   drift: ReplayResult["drift"];
   recoveries: ReplayResult["recoveries"];
+  /** Business outcomes already put to a human, so a hand-back cannot ask about the same one forever. */
+  businessAsked: Set<string>;
   recoveryCounts: Map<string, number>;
   stepsRun: number;
   startedAt: string;
@@ -167,7 +177,7 @@ export async function replay(opts: ReplayOptions): Promise<ReplayResult> {
 
   const cap = pre.capability;
   const state: RunState = {
-    cap, ctx: { params: opts.params, secrets: opts.secrets }, outputs: {}, sideEffects: "none", drift: [], recoveries: [], recoveryCounts: new Map(),
+    cap, ctx: { params: opts.params, secrets: opts.secrets }, outputs: {}, sideEffects: "none", drift: [], recoveries: [], recoveryCounts: new Map(), businessAsked: new Set<string>(),
     stepsRun: 0, startedAt, deadline: t0 + (opts.runTimeoutMs ?? 300_000), activePrelude: undefined, pausedMs: 0,
   };
   evidence.event({ type: "run_started", mode: "replay", capabilityId: cap.capability.id });
@@ -242,6 +252,27 @@ export async function replay(opts: ReplayOptions): Promise<ReplayResult> {
       throw new Stop({ status: "escalated", interventionId: id, reason: "REPLAY_FAILURE", ...(step ? { atStep: step.id } : {}), detail: `${code}: ${expected} — ${observed}`, ...common(state) });
     }
     throw new Stop({ status: "failure", code, ...(step ? { atStep: step.id } : {}), expected, observed, evidence: { ...bundle, narrative: narrativePath }, ...common(state) });
+  };
+
+  /**
+   * Put a business outcome to a human before it is returned, when the caller asked for that.
+   *
+   * Asked once per outcome code: if the operator hands back and the same condition is still on
+   * screen, it is the answer rather than a state to be repaired, and asking again would loop.
+   * Returns what the caller should do next, or undefined when the outcome should just be returned.
+   */
+  const reviewBusiness = async (o: Outcome, step: Step | undefined, stepIndex: number): Promise<"continue" | "rerun" | undefined> => {
+    if (!opts.escalateOnBusinessOutcome || state.businessAsked.has(o.code)) return undefined;
+    state.businessAsked.add(o.code);
+    // Nobody attached to ask — a CLI run or a batch. Returning `escalated` is the equivalent
+    // answer: the caller wanted a person to see this, and exit 3 is how they find out.
+    if (!opts.onEscalate) {
+      const id = `intervention-${randomUUID().slice(0, 8)}`;
+      evidence.event({ type: "escalate", ...(step ? { stepId: step.id } : {}), interventionId: id, reason: "BUSINESS_OUTCOME_REVIEW", detail: `${o.code}: ${o.message}` });
+      throw new Stop({ status: "escalated", interventionId: id, reason: "BUSINESS_OUTCOME_REVIEW", ...(step ? { atStep: step.id } : {}), detail: `${o.code}: ${o.message}`, ...common(state) });
+    }
+    const decision = await escalate("BUSINESS_OUTCOME_REVIEW", step, stepIndex, `${o.code}: ${o.message}`);
+    return decision === "same" ? "rerun" : "continue";
   };
 
   const business = (o: Outcome, step: Step | undefined): never => {
@@ -395,7 +426,13 @@ export async function replay(opts: ReplayOptions): Promise<ReplayResult> {
   const handleDetection = async (found: { outcome: Outcome; state: ScreenState } | undefined, step: Step, stepIndex: number, phase: Phase): Promise<"continue" | "rerun" | "reverify"> => {
     if (!found) return "continue";
     const o = found.outcome;
-    if (o.kind === "business") business(o, step);
+    if (o.kind === "business") {
+      const reviewed = await reviewBusiness(o, step, stepIndex);
+      // "next" means the operator dealt with it — carry on. "same" re-runs the step, and if the
+      // condition persists the outcome is returned as it stands.
+      if (reviewed) return reviewed;
+      business(o, step);
+    }
     if (o.kind === "recoverable") return recover(o, step, stepIndex, phase);
     // failure outcome
     const detail = found.state.observation.dialog ? `${found.state.observation.dialog.type}: "${found.state.observation.dialog.message}"` : o.message;
@@ -649,7 +686,12 @@ export async function replay(opts: ReplayOptions): Promise<ReplayResult> {
       evidence.event({ type: "verify", assertion: `checkpoint ${describeAssertion(a)}`, ok: v.ok, observed: v.observed.slice(0, 200) });
       if (!v.ok) {
         const found = await classify(undefined, cap.steps.length);
-        if (found?.outcome.kind === "business") business(found.outcome, undefined);
+        if (found?.outcome.kind === "business") {
+          // The same gate as mid-flow. There is no step left to re-run here, so whatever the
+          // operator answers the outcome is then returned — they asked to see it, not to change it.
+          await reviewBusiness(found.outcome, undefined, cap.steps.length);
+          business(found.outcome, undefined);
+        }
         await fail("FINAL_CHECKPOINT_FAILED", undefined, v.expected, v.observed);
       }
     }

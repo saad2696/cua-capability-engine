@@ -30,15 +30,24 @@ export default function App() {
   const [offline, setOffline] = useState(false);
   const onError = useCallback((message) => setError(message), []);
 
+  // Refetched rather than loaded once: approving a capability changes its status, and a gate still
+  // offering it as a draft after you have approved it is worse than a slow gate — it looks like the
+  // approval did not take.
+  const loadDemo = useCallback(
+    () =>
+      api.demo().then(
+        (d) => {
+          setDemo(d);
+          setOffline(false);
+        },
+        () => setOffline(true),
+      ),
+    [],
+  );
+  // Keyed on the path so returning to the gate picks up anything approved while you were away.
   useEffect(() => {
-    api.demo().then(
-      (d) => {
-        setDemo(d);
-        setOffline(false);
-      },
-      () => setOffline(true),
-    );
-  }, []);
+    void loadDemo();
+  }, [loadDemo, path]);
 
   // The count of what is waiting belongs in the navigation: an operator should not have to open a
   // page to find out that a run has stopped for them.
