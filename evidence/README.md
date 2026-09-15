@@ -56,5 +56,21 @@ Read `events.jsonl` in either for the control trail: `control_change` records ev
 lease id, `resume` records the operator's answer, and `interventions.json` holds the request an
 operator saw, including who claimed it and how they resolved it.
 
-No parameter or secret value appears in any file in this directory. The test suite asserts it, and
-`grep -r 10042 evidence/` returns nothing.
+## What is and is not redacted
+
+No parameter or secret value appears in any **structured** file in this directory — `events.jsonl`,
+`run.json`, `artifact.json`, `interventions.json`, `usage.json` and the failure narratives all pass
+through the redactor, and the test suite walks every file a handover writes to assert it. Checked
+directly: `grep -rn 10042 evidence/ --include='*.json*' --include='*.md' --include='*.txt'` matches
+only this README's own prose.
+
+**Screenshots are not redacted, and the grep above cannot see inside a PNG.** Every member-detail
+capture renders the member ID and name exactly as the page drew them. This is a real limit, not an
+oversight: `policy.yaml` pins `redaction.maskEvidenceScreenshots` to `false`, and the schema types
+it as the literal `false` so it cannot be set to `true` by a deployment that has not built the
+masking. The engine records a bbox for every element it touches, so blurring the sensitive ones is a
+contained follow-up rather than a redesign — see the "Known limits" section of the README.
+
+Everything on screen here is synthetic. `apps/target-app` ships fabricated members and balances and
+has never held real data, which is what makes publishing these screenshots safe in this repository
+and is not an argument that it would be safe in a real one.

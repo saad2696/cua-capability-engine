@@ -10,3 +10,7 @@
 - [ ] Escalation sequence: engine ↔ console ↔ operator, frame stream and input forwarding
 - [ ] Artifact lifecycle: draft → needsReview/approved → deprecated, with stability gate
 - [ ] Multi-tenant overlay merge: base artifact + tenant overlay → effective artifact
+- [ ] Policy enforcement layers: decision → surface boundary → network → pre-flight, and where a
+      human override is recorded instead of refused
+- [ ] Risk grading: signals in, `risky` / `sideEffect: possible` / `none` out, and what each mode
+      (escalate, approvedArtifact, humanConfirm, block) does with the answer

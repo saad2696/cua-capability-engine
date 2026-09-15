@@ -469,10 +469,143 @@ panel drawn differently, because it means something different.
 
 ## 6. Safety
 
-_Filled in with slice 009._ Already in place: the network allowlist hook on the surface aborts
-any request outside permitted origins at the browser level (a hidden redirect cannot leak the
-session); sensitive field values are redacted in the element list before the model or the
-evidence sees them; secrets are referenced by name and resolved from the environment.
+### Policy is data, because the audience is not a programmer
+
+Everything the runtime is allowed to do lives in one file, `policy.yaml`, validated against a Zod
+schema on load and loaded by every entry point through a single `runPolicy()` — `cua replay`,
+`cua discover`, and both run kinds in the server. That last part is the claim, and it is easy to get
+almost right: the file started out being read only by `cua doctor`, with a test asserting it equalled
+the defaults compiled into the code. That test makes the file *accurate*; it does not make it
+*causal*, and a policy file that documents the constants rather than setting them is the kind of
+control that passes review and protects nothing. The tests that matter now edit a temporary copy —
+add a blocked path, add a risky term, switch `onRisky` to `block` — and assert the run behaves
+differently. Origins are the one field passed in rather than read, because a replay's permitted
+origin comes from its artifact and the suite binds the mock app to an ephemeral port. The alternative — constants spread across the modules that enforce them — reads
+fine to whoever wrote it and answers no question anyone actually asks. The two questions are "what
+can this thing touch?" and "what changed between these two releases?", and both are answered by
+reading or diffing a single document.
+
+The schema is `.strict()`, so an unknown key is an error rather than a shrug. This matters more for
+a security control than anywhere else: `blockedUrlPatters: ["/admin"]` under a permissive parser
+reads to a reviewer as a policy that blocks `/admin` while enforcing precisely nothing. Failing at
+startup is the only behaviour that cannot be misread.
+
+One field is typed as the literal `false`. `redaction.maskEvidenceScreenshots` describes masking we
+did not build, and typing it as a boolean would let a deployment turn on a feature that does not
+exist and believe its screenshots were clean. A gap that is loud is safer than a gap that is
+configurable.
+
+### Four gates, because each one is bypassable on its own
+
+| Layer | Where | Why the layer above is not enough |
+|---|---|---|
+| Decision | the model loop | — |
+| Surface boundary | `PolicyEnforcedSurface` | **Replay has no model**, so the decision gate never runs on the path that runs most often. |
+| Network | Playwright interception | A redirect or an injected asset moves the session without any engine code asking it to. |
+| Pre-flight | `replay/preflight.ts` | An artifact travels between environments; its declared policy has to be a subset of the one in force where it lands. |
+
+The second layer is a wrapper implementing `Surface`, not a check inside `PlaywrightSurface`. That
+is the same shape as `LeasedSurface` from slice 007, and for the same reason: `Surface` describes how
+an application is perceived and driven, and a desktop surface built on an OS accessibility API has
+no opinion about allowlists. The design document for this slice actually specified putting the check
+inside `act` and `navigate`; following it would have contradicted a decision already made and
+written up two slices earlier. The two wrappers compose —
+`LeasedSurface(PolicyEnforcedSurface(playwright))` — so a human who takes control still passes
+through the policy layer.
+
+**A human is not blocked there.** This was the one genuinely hard call in the slice. An operator who
+has taken control has authority the engine does not, and the reason they took control is usually
+that the screen is somewhere the engine could not go — a gate that stopped them would disable
+escalation exactly when it is needed. So the layer records `policy_override` with the controller's
+identity and lets the action through. Refusing would produce a system that is safe and useless; this
+produces one that is accountable.
+
+### The risk classifier, and the test that nearly passed for the wrong reason
+
+The classifier answers one question: does this action commit something a human cannot take back?
+Both callers — the discovery loop, which holds a model decision and an observation, and the surface
+boundary, which holds an action and a resolved element — flatten what they know into the same
+`RiskSubject`. A rule implemented inside either call path would have applied to one of them only,
+which is the failure this module exists to prevent.
+
+Two findings here are worth more than the code.
+
+**The default pattern could not match the application.** `DEFAULT_RISKY` carried `"open account"`
+anchored as `^\s*(open account)\b`. The mock app's controls read `Open New Sub-Account` and
+`Open Account`. The anchor matches the second and not the first, and a test written from memory —
+`expect(classify("Open Account").risk).toBe("risky")` — passes while telling you nothing about
+whether the guard fires on the screen it guards. The test now reads the labels out of
+`apps/target-app/src/views/pages.ts` with a regex and fails if the app stops rendering a control
+that matches. A safety test that quotes its own expectations is testing the test.
+
+**A single risk grade would have made the gate worse.** The sub-account flow posts twice: `Continue`
+validates and re-renders, `Open Account` moves the money. The design specified `formSubmitIsRisky:
+true` against a boolean `risky`, which escalates both. That is not extra caution — an operator asked
+to approve a step that commits nothing learns the prompt is noise, and clicks through the one that
+matters at the same speed. So the classifier returns two grades: `risky` stops, `sideEffect:
+possible` records and proceeds. The vocabulary was already there — `ReplayResult.sideEffects` has
+used `none | possible | committed` since slice 003 — so an operator learns one set of words for both.
+Worth being precise about what that shared vocabulary is and is not: the classifier's grade is a
+*prediction* about an action not yet taken, and the result field is a *record* of what a finished run
+did. The two are not mechanically coupled — the artifact carries `pointOfNoReturn`, which the
+executor promotes to `possible` and then `committed` as the step succeeds — and claiming they agree
+"by construction" would overstate it. [ADR 0002.](./docs/adr/0002-graded-risk-classification.md)
+
+A third finding came from asking what each rule can actually see. `irreversibleUrlPatterns` reads a
+destination, and a click does not have one before it happens — `ElementSummary` carries a role, a
+name and a box, not the form its control belongs to. So that rule is live for `navigate`, and for
+Enter inside a form via the page's own URL, and dead for clicks. The first version of the test hid
+this by hand-feeding a `formAction` field no production caller sets, and then asserting that "both
+signals fire" — true of the synthetic subject, false of anything discovery produces. The test now
+builds exactly the subject `basic.ts` builds and asserts the button text carries it alone. That is
+the same failure the anchored-regex bug was: the label was real and the *input* was a paraphrase.
+
+Scoping the Enter fallback took one more turn. Falling back to the page URL for clicks as well would
+have been the obvious generalisation and would have been wrong: the confirmation page is served
+*from* `/member/:id/subaccount/open`, so "Return to Member" on it would read as a second commit. The
+fallback is scoped to Enter, and there is a test named for that page.
+
+The cost is stated rather than hidden: an irreversible button labelled something the list does not
+anticipate runs unattended. Three things bound it — the artifact records `sideEffects: possible`
+where a reviewer sees it, `riskyStepsRequire: humanConfirm` pauses on every risky step regardless of
+grade, and a model-flagged step is honoured whatever its text says.
+
+### `cua doctor`, and the check that asks the right question
+
+This repository is published at the end of the exercise with a real API key in a local `.env`, so
+the check that matters is whether git is tracking it. `doctor` asks `git ls-files` and `git log
+--all -- .env`, not `.gitignore`. A `.gitignore` entry proves an intention; the two disagree exactly
+when a file was staged before the rule was written, which is the case that leaks — and deleting the
+file at the tip does not help, because history keeps it. Both states are tested against throwaway
+repositories built in the test: one where `.gitignore` names a file git is still tracking, one where
+a key was committed and then removed. The naive check passes both.
+
+A second finding came from running it: the first version failed on `.env.example` because
+`TARGET_USER=demo` has a value. Those are the mock app's synthetic logins and are meant to be
+committed. A checker that cries wolf on the one file that has to stay readable gets ignored, so the
+rule is now narrow — credential-shaped names must be blank, password-shaped names get a warning that
+names the value so a human can see at a glance that it is still `demo`.
+
+### What is redacted, and what is not
+
+Secrets are referenced by name in an artifact and resolved from the environment at act time, so no
+credential is ever written into a capability. Substitution happens at the surface, after the model
+has produced its decision, so the value never reaches the model either. Every structured file
+written as evidence passes the redactor, and a test walks every file a handover produces — added
+after `interventions.json` was found being written with `redact=false`, which put a member ID in a
+captured URL. That was the third redaction leak found in this project, which is the argument for the
+test that enumerates files rather than checking the ones you thought of.
+
+Screenshots are the honest gap. They render whatever was on screen, member IDs included, and the
+`grep -r 10042 evidence/` that the evidence README used to cite as proof cannot see inside a PNG.
+The claim there now separates the structured files, where it holds and is tested, from the pixels,
+where it does not. Everything on screen is synthetic — which is what makes publishing these
+screenshots safe here, and is not an argument that it would be safe anywhere else.
+
+The remaining limits are in the README: evidence is written unencrypted with no retention policy,
+and the console has no authentication, binding to loopback and assuming a single trusted operator.
+The intervention record already carries an `approvedBy` field for the identity that would fix the
+second one.
 
 ## 7. Cuts
 

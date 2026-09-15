@@ -12,10 +12,11 @@ import type { Capability, DiscoveryResult, Event, ReplayResult } from "@cua/sche
 import { runDiscovery } from "../agent/loop.js";
 import { EvidenceWriter } from "../evidence/EvidenceWriter.js";
 import { Redactor } from "../evidence/redactor.js";
-import { basicPolicy } from "../policy/basic.js";
+import { runPolicy } from "../policy/load.js";
 import { replay } from "../replay/executor.js";
 import { Session } from "../session/Session.js";
 import { PlaywrightSurface } from "../surface/playwright/PlaywrightSurface.js";
+import { PolicyEnforcedSurface } from "../policy/PolicyEnforcedSurface.js";
 import type { LlmProvider } from "../llm/types.js";
 import type { Surface } from "../surface/types.js";
 
@@ -126,7 +127,7 @@ export class RunRegistry {
     const redactor = new Redactor({ secrets: { ...secrets, ...Object.fromEntries(Object.entries(params).map(([k, v]) => [`param:${k}`, v])) } });
     const evidence = new EvidenceWriter(runId, this.evidenceRoot, redactor);
     const origins = raw.policy?.allowedOrigins?.length ? raw.policy.allowedOrigins : ["http://localhost:4100"];
-    const policy = basicPolicy({ allowedOrigins: origins, blockedUrlPatterns: ["/__faults", "/__reset"] });
+    const { gate: policy, policy: doc } = runPolicy({ origins });
     const surface = new PlaywrightSurface({ headless: input.headless ?? true, allowRequest: (u) => policy.allowRequest(u), tracePath: join(evidence.dir, "trace.zip") });
     surface.onPageSwitch((u) => (policy.allowRequest(u) ? "adopt" : "close"));
 
@@ -144,12 +145,24 @@ export class RunRegistry {
       recent: [],
       session: undefined as unknown as Session,
     };
+
+    // Enforcement layer 2: every lease the session hands out — to the engine or to a human who has
+    // taken control — resolves through this wrapper, so replay passes the same allowlist check the
+    // model's decisions do. A human is not stopped, only recorded.
+    const live: { session?: Session } = {};
+    const guarded = new PolicyEnforcedSurface(surface, {
+      gate: policy,
+      controller: () => live.session?.controller ?? "replay",
+      onBlock: (action, reason) => evidence.event({ type: "policy_block", action, reason, controller: "replay" }),
+      onOverride: (by, action, reason) => evidence.event({ type: "policy_override", action, reason, by }),
+    });
     const session = new Session({
-      runId, surface, evidence, engineController: "replay", capabilityId,
+      runId, surface: guarded, evidence, engineController: "replay", capabilityId,
       ...(input.interventionTimeoutMs ? { interventionTimeoutMs: input.interventionTimeoutMs } : {}),
       onChange: () => this.changed(record),
     });
     record.session = session;
+    live.session = session;
     this.runs.set(runId, record);
 
     evidence.subscribe((e) => {
@@ -179,9 +192,12 @@ export class RunRegistry {
           artifact: input.artifact, params, secrets, surface: engineSurface, evidence,
           globalPolicy: { allowedOrigins: origins },
           allowDraft: input.allowDraft ?? true,
+          // A console run is attended, so it tightens the document rather than following it: an
+          // operator is already watching, and asking them is cheaper than failing. It never
+          // loosens — a policy of `block` stays `block`.
           escalateOnFailure: input.escalateOnFailure ?? true,
-          riskyStepsRequire: input.riskyStepsRequire ?? "humanConfirm",
-          ...(input.runTimeoutMs ? { runTimeoutMs: input.runTimeoutMs } : {}),
+          riskyStepsRequire: input.riskyStepsRequire ?? (doc.replay.riskyStepsRequire === "block" ? "block" : "humanConfirm"),
+          runTimeoutMs: input.runTimeoutMs ?? doc.runTimeoutMs,
           ...(input.stepDelayMs ? { stepDelayMs: input.stepDelayMs } : {}),
           cookies,
           onEscalate: session.onEscalate,
@@ -219,7 +235,7 @@ export class RunRegistry {
 
     const redactor = new Redactor({ secrets: { ...secrets, ...Object.fromEntries(Object.entries(params).map(([k, v]) => [`param:${k}`, v])) } });
     const evidence = new EvidenceWriter(runId, this.evidenceRoot, redactor);
-    const policy = basicPolicy({ allowedOrigins: [origin], blockedUrlPatterns: ["/__faults", "/__reset"] });
+    const { gate: policy, policy: doc } = runPolicy({ origins: [origin] });
     const surface = new PlaywrightSurface({ headless: input.headless ?? true, allowRequest: (u) => policy.allowRequest(u), tracePath: join(evidence.dir, "trace.zip") });
     surface.onPageSwitch((u) => (policy.allowRequest(u) ? "adopt" : "close"));
 
@@ -235,12 +251,24 @@ export class RunRegistry {
       startedAt: new Date().toISOString(), evidenceDir: evidence.dir, evidence, surface, origins: [origin],
       recent: [], session: undefined as unknown as Session,
     };
+
+    // Enforcement layer 2: every lease the session hands out — to the engine or to a human who has
+    // taken control — resolves through this wrapper, so replay passes the same allowlist check the
+    // model's decisions do. A human is not stopped, only recorded.
+    const live: { session?: Session } = {};
+    const guarded = new PolicyEnforcedSurface(surface, {
+      gate: policy,
+      controller: () => live.session?.controller ?? "agent",
+      onBlock: (action, reason) => evidence.event({ type: "policy_block", action, reason, controller: "agent" }),
+      onOverride: (by, action, reason) => evidence.event({ type: "policy_override", action, reason, by }),
+    });
     const session = new Session({
-      runId, surface, evidence, engineController: "agent", capabilityId: input.capabilityId, goal: input.goal,
+      runId, surface: guarded, evidence, engineController: "agent", capabilityId: input.capabilityId, goal: input.goal,
       ...(input.interventionTimeoutMs ? { interventionTimeoutMs: input.interventionTimeoutMs } : {}),
       onChange: () => this.changed(record),
     });
     record.session = session;
+    live.session = session;
     this.runs.set(runId, record);
     evidence.subscribe((e) => {
       record.recent.push(e);
@@ -255,7 +283,7 @@ export class RunRegistry {
         const trace = await runDiscovery({
           goal: input.goal, url: input.url, params, secrets, provider: input.provider,
           surface: engineSurface, policy, evidence,
-          ...(input.maxSteps ? { maxSteps: input.maxSteps } : {}),
+          maxSteps: input.maxSteps ?? doc.maxSteps,
           approveRisky: async (decision) => session.requestApproval(`${decision.tool}: ${JSON.stringify(decision.args).slice(0, 200)}`),
         });
         record.discovery = { status: trace.status, stepsTaken: trace.steps.length };

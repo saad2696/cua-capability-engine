@@ -1,14 +1,26 @@
 /**
- * Minimal discovery-time policy used by the agent loop. Slice 009 replaces the internals with
- * the full policy.yaml loader, risk classifier and multi-layer enforcement; the interface stays.
+ * The decision-time gate (enforcement layer 1 of 4).
+ *
+ * The `DiscoveryPolicy` interface is unchanged from slice 005 — `loop.ts` and three test files call
+ * it and none of them needed editing — but the internals now derive entirely from a validated
+ * `Policy` document instead of inline literals. `policyGate()` builds a gate from a whole policy and
+ * is what `runPolicy()` uses; `basicPolicy()` is the literals-only shortcut kept for tests.
+ *
+ * This layer can be bypassed by anything that does not route through the model loop, which is why
+ * it is not the only layer: `PolicyEnforcedSurface` re-checks at the boundary where actions become
+ * real, and Playwright request interception re-checks at the network.
  */
 import type { Decision } from "../llm/types.js";
 import type { Observation } from "../surface/types.js";
+import { riskClassifier, type RiskClassifier, type RiskSubject } from "./risk.js";
+import { DEFAULT_POLICY, type Policy } from "./schema.js";
 
 export interface PolicyVerdict {
   allow: boolean;
   risk: "safe" | "risky";
   reason?: string;
+  /** Aligned with the artifact's `sideEffects` vocabulary; absent means "none". */
+  sideEffect?: "none" | "possible" | "committed";
 }
 
 export interface DiscoveryPolicy {
@@ -19,6 +31,9 @@ export interface DiscoveryPolicy {
   riskyUrlPatterns: RegExp[];
   check(decision: Decision, obs: Observation): PolicyVerdict;
   allowRequest(url: string): boolean;
+  /** The document every rule above was derived from. */
+  readonly policy: Policy;
+  readonly classifier: RiskClassifier;
 }
 
 export interface BasicPolicyOptions {
@@ -29,18 +44,17 @@ export interface BasicPolicyOptions {
   allowedTools?: string[];
 }
 
-const DEFAULT_RISKY = ["confirm", "submit", "open account", "transfer", "delete", "close account", "approve", "post", "pay"];
-
-export function basicPolicy(opts: BasicPolicyOptions): DiscoveryPolicy {
-  const origins = opts.allowedOrigins.map((o) => new URL(o).origin);
-  const blocked = (opts.blockedUrlPatterns ?? []).map((p) => new RegExp(p));
-  const risky = new RegExp(`^\\s*(${(opts.riskyButtonText ?? DEFAULT_RISKY).map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})\\b`, "i");
-  const riskyUrls = (opts.riskyUrlPatterns ?? ["/confirm", "/submit", "/open"]).map((p) => new RegExp(p));
-  const tools = new Set(opts.allowedTools ?? ["click", "type", "select", "press", "navigate", "extract", "assert_state", "done", "give_up"]);
+/** Build a gate from a full policy document. */
+export function policyGate(policy: Policy): DiscoveryPolicy {
+  const origins = policy.allowedOrigins.map((o) => new URL(o).origin);
+  const blocked = policy.blockedUrlPatterns.map((p) => new RegExp(p, "i"));
+  const tools = new Set(policy.allowedActions);
+  const classifier = riskClassifier(policy.risk);
 
   const allowRequest = (url: string): boolean => {
     try {
       const u = new URL(url);
+      // about:blank and data: are the browser's own scratch surfaces, never a network egress.
       if (u.protocol === "about:" || u.protocol === "data:") return true;
       if (!origins.includes(u.origin)) return false;
       return !blocked.some((re) => re.test(u.pathname));
@@ -53,28 +67,57 @@ export function basicPolicy(opts: BasicPolicyOptions): DiscoveryPolicy {
     allowedOrigins: origins,
     blockedUrlPatterns: blocked,
     allowedTools: tools,
-    riskyButtonText: risky,
-    riskyUrlPatterns: riskyUrls,
+    riskyButtonText: classifier.buttonText,
+    riskyUrlPatterns: classifier.urlPatterns,
     allowRequest,
+    policy,
+    classifier,
     check(decision, obs) {
       if (!tools.has(decision.tool)) return { allow: false, risk: "safe", reason: `tool ${decision.tool} is not permitted` };
       if (decision.tool === "navigate") {
         const url = String(decision.args["url"] ?? "");
         if (!allowRequest(url)) return { allow: false, risk: "safe", reason: `navigation to ${url} is outside the allowlist` };
       }
-      if (decision.tool === "click" || decision.tool === "press") {
-        let riskyHit = false;
-        if (decision.tool === "click") {
-          const el = obs.elements[Number(decision.args["index"])];
-          if (el && (el.role === "button" || el.role === "link" || el.role === "menuitem") && risky.test(el.name)) riskyHit = true;
-        } else if (String(decision.args["key"]).toLowerCase() === "enter") {
-          // Enter with focus in a form field submits the form
-          const focused = obs.elements.find((e) => e.focused);
-          if (focused && (focused.role === "textbox" || focused.role === "combobox")) riskyHit = riskyUrls.some((re) => re.test(obs.frames.map((f) => f.url).join(" ")));
-        }
-        if (riskyHit) return { allow: true, risk: "risky", reason: "irreversible action requires human approval" };
+
+      const el = decision.tool === "click" ? obs.elements[Number(decision.args["index"])] : undefined;
+      const focused = obs.elements.find((e) => e.focused);
+      const subject: RiskSubject = {
+        action: decision.tool,
+        pageUrl: obs.url,
+        ...(el ? { targetName: el.name, targetRole: el.role } : {}),
+        ...(decision.tool === "navigate" ? { url: String(decision.args["url"] ?? "") } : {}),
+        ...(decision.tool === "press" ? { key: String(decision.args["key"] ?? "") } : {}),
+        ...(focused && (focused.role === "textbox" || focused.role === "combobox") ? { focusInForm: true } : {}),
+        ...(decision.args["irreversible"] === true ? { modelFlagged: true } : {}),
+      };
+      const verdict = classifier.classify(subject);
+      if (verdict.risk === "risky") {
+        const why = verdict.reasons.join("; ");
+        if (policy.discovery.onRisky === "block") return { allow: false, risk: "risky", reason: `irreversible action refused by policy: ${why}`, sideEffect: verdict.sideEffect };
+        return { allow: true, risk: "risky", reason: `irreversible action requires human approval — ${why}`, sideEffect: verdict.sideEffect };
       }
-      return { allow: true, risk: "safe" };
+      return { allow: true, risk: "safe", sideEffect: verdict.sideEffect };
     },
   };
+}
+
+/**
+ * Convenience constructor: start from the defaults and override only the fields a caller names.
+ * Every production entry point goes through `runPolicy()` in load.js instead, so that `policy.yaml`
+ * is what governs a run; this remains for tests, which need a gate built from literals without a
+ * file on disk, and it is the baseline those tests compare an edited policy against.
+ */
+export function basicPolicy(opts: BasicPolicyOptions): DiscoveryPolicy {
+  const d = DEFAULT_POLICY;
+  return policyGate({
+    ...d,
+    allowedOrigins: opts.allowedOrigins.length ? opts.allowedOrigins : d.allowedOrigins,
+    blockedUrlPatterns: opts.blockedUrlPatterns ?? d.blockedUrlPatterns,
+    allowedActions: opts.allowedTools ?? d.allowedActions,
+    risk: {
+      ...d.risk,
+      irreversibleButtonText: opts.riskyButtonText ?? d.risk.irreversibleButtonText,
+      irreversibleUrlPatterns: opts.riskyUrlPatterns ?? d.risk.irreversibleUrlPatterns,
+    },
+  });
 }

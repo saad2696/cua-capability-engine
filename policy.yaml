@@ -1,0 +1,90 @@
+# What any run of this engine is allowed to do.
+#
+# This file is the whole of the runtime's authority. Every gate the engine applies — the model's
+# decisions, the surface boundary, the network layer, and the pre-flight check on an artifact — is
+# derived from this document, so this is the only file you need to read to answer "what can it
+# touch?", and the only one you need to diff to answer "what changed?".
+#
+# Validated on load against a strict schema: unknown keys are an error, not a shrug. A misspelt
+# control that silently enforces nothing is the failure this is guarding against.
+#
+# Checked by `pnpm cua doctor`.
+
+version: 1
+
+# The engine may not reach any origin outside this list. Enforced at the model's decision, at the
+# surface boundary, and again at the network, so a redirect cannot carry a session elsewhere.
+allowedOrigins:
+  - "http://localhost:4100"
+
+# Blocked even inside an allowed origin — an allowlist is necessary, not sufficient.
+# The fault-injection endpoints are the demo's own test seams and must never be reachable from a
+# capability; /admin stands in for the screens a service account should not be able to drive.
+blockedUrlPatterns:
+  - "/__faults"
+  - "/__reset"
+  - "/admin"
+
+# Tools the model may call. Anything else is refused at decision time and fed back as a notice.
+allowedActions: [click, type, select, press, navigate, extract, assert_state, done, give_up]
+
+maxSteps: 40
+runTimeoutMs: 300000
+
+# What counts as a point of no return. See docs/adr/0002-graded-risk-classification.md for why a
+# plain form submit is graded "possible" rather than "risky" — escalating on every POST teaches an
+# operator to click through the prompt that matters.
+risk:
+  irreversibleButtonText:
+    - "confirm"
+    - "submit"
+    - "open account"
+    - "transfer"
+    - "delete"
+    - "close account"
+    - "approve"
+    - "post"
+    - "pay"
+    - "send"
+  irreversibleUrlPatterns:
+    - "/confirm"
+    - "/submit"
+    - "/open"
+    - "/transfer"
+    - "/delete"
+  formSubmitIsRisky: true
+  keyboardEnterOnFormIsRisky: true
+
+discovery:
+  # escalate: a human approves in the console and the action then runs, with approvedBy recorded.
+  # block: refuse outright and make the model find another route.
+  onRisky: escalate
+
+replay:
+  requireApprovedArtifact: true
+  # approvedArtifact: a risky step runs only from an approved artifact (the approval *is* the
+  #   human decision, made once at review time rather than on every run).
+  # humanConfirm: pause and ask on every run.
+  # block: never run a risky step unattended.
+  riskyStepsRequire: approvedArtifact
+  escalateOnFailure: false
+
+redaction:
+  # Typed values into fields matching these names are never logged, whatever the artifact declares.
+  sensitiveInputPattern:
+    - "password"
+    - "passcode"
+    - "ssn"
+    - "social"
+    - "pin"
+    - "secret"
+    - "token"
+    - "cvv"
+    - "security code"
+  # Assumed for a capability parameter that does not declare its own sensitivity.
+  paramSensitivityDefault: pii
+  # Not implemented. Screenshots render whatever was on screen, including a member ID. The schema
+  # pins this to false so the gap cannot be papered over by flipping a flag that does nothing.
+  # See the "Known limits" section of the README.
+  maskEvidenceScreenshots: false
+  logTypedValues: false

@@ -10,7 +10,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 import {
-  AnthropicProvider, EvidenceWriter, FakeProvider, PlaywrightSurface, Redactor, basicPolicy, estimateCostUsd, newRunId,
+  AnthropicProvider, EvidenceWriter, FakeProvider, PlaywrightSurface, PolicyEnforcedSurface, runPolicy, Redactor, estimateCostUsd, newRunId,
   recordCapability, runDiscovery, type LlmProvider, type ScriptStep,
 } from "@cua/engine";
 import { artifactFileName, DiscoveryResultSchema, summarizeCapability, type Outcome } from "@cua/schema";
@@ -23,7 +23,7 @@ export async function discoverCommand(argv: string[]): Promise<void> {
     options: {
       goal: { type: "string" }, url: { type: "string" }, "capability-id": { type: "string" }, name: { type: "string" },
       param: { type: "string", multiple: true, default: [] }, provider: { type: "string", default: process.env["ANTHROPIC_API_KEY"] ? "anthropic" : "fake" },
-      model: { type: "string" }, "max-steps": { type: "string", default: "30" }, headed: { type: "boolean", default: false },
+      model: { type: "string" }, "max-steps": { type: "string" }, headed: { type: "boolean", default: false },
       "approve-risky": { type: "boolean", default: false }, vendor: { type: "string", default: "legacy-cu-core" },
       out: { type: "string", default: "artifacts" }, "fake-script": { type: "string" }, "evidence-name": { type: "string" },
     },
@@ -58,18 +58,25 @@ export async function discoverCommand(argv: string[]): Promise<void> {
   }
 
   const origin = new URL(url).origin;
-  const policy = basicPolicy({ allowedOrigins: [origin], blockedUrlPatterns: ["/__faults", "/__reset"] });
+  const { gate: policy, policy: doc, source: policySource } = runPolicy({ origins: [origin] });
   const runId = newRunId("discover");
   const redactor = new Redactor({ secrets: { ...secrets, ...Object.fromEntries(Object.entries(params).map(([k, v]) => [`param:${k}`, v])) } });
   const evidence = new EvidenceWriter(runId, process.env["CUA_EVIDENCE_DIR"] ?? "evidence", redactor, values["evidence-name"] ?? runId);
   const surface = new PlaywrightSurface({ headless: !values.headed, allowRequest: (u) => policy.allowRequest(u) });
   surface.onPageSwitch((u) => (policy.allowRequest(u) ? "adopt" : "close"));
+  // Enforcement layer 2: the model's decisions are already checked, but an action that reaches the
+  // surface by any other route is checked here too.
+  const guarded = new PolicyEnforcedSurface(surface, {
+    gate: policy,
+    onBlock: (action, reason) => evidence.event({ type: "policy_block", action, reason, controller: "agent" }),
+  });
 
+  console.log(`  policy: ${policySource}`);
   console.log(`discover ${capabilityId}  provider=${provider.name}/${provider.model}  evidence=${evidence.dir}`);
   const started = Date.now();
   try {
     const trace = await runDiscovery({
-      goal, url, params, secrets, provider, surface, policy, evidence, maxSteps: Number(values["max-steps"]),
+      goal, url, params, secrets, provider, surface: guarded, policy, evidence, maxSteps: values["max-steps"] ? Number(values["max-steps"]) : doc.maxSteps,
       ...(values["approve-risky"] ? { approveRisky: async () => true } : {}),
       log: (line) => console.log(`  ${line}`),
     });

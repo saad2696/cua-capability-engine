@@ -26,7 +26,7 @@ Slice-by-slice build. See [openspec/ROADMAP.md](./openspec/ROADMAP.md) for what 
 | 006 | Deterministic replay | done |
 | 007 | Session control and escalation | done |
 | 008 | Operator console | done |
-| 009 | Policy guardrails | planned |
+| 009 | Policy guardrails | done |
 | 010 | Evidence, README, REPORT | planned |
 
 ## Quick start
@@ -43,6 +43,7 @@ Configuration lives in `.env` (gitignored). Copy the template and fill in what y
 
 ```bash
 cp .env.example .env
+pnpm cua doctor          # confirms no secret is tracked and policy.yaml is valid
 ```
 
 | Variable | Needed for | Notes |
@@ -355,10 +356,84 @@ pnpm lint
 pnpm typecheck
 ```
 
-## Safety notes
+## Safety
 
-Secrets live only in `.env`. The target app contains synthetic data only. Artifacts and logs are
-redacted; see slice 009 and REPORT.md § Safety.
+Everything the engine is allowed to do is declared in one validated file, [`policy.yaml`](./policy.yaml).
+Every entry point loads it — `cua replay`, `cua discover`, and both run kinds in the server — so
+editing the file changes what a run does rather than only what the docs say. An invalid file stops
+the run instead of falling back to defaults. Run the checker before anything else:
+
+```bash
+pnpm cua doctor          # secrets, policy, target reachability; exit 2 on any failure
+```
+
+```
+  [  ok  ] .env is untracked            git ls-files reports no .env
+  [  ok  ] .env absent from history     no commit has ever touched .env
+  [  ok  ] no API key in tracked files  no key-shaped string at HEAD
+  [  ok  ] .env.example carries no key  every credential variable is left blank
+  [ warn ] .env.example passwords       TARGET_PASSWORD=demo — fine while these are the mock app's synthetic logins
+  [  ok  ] policy.yaml                  1 origin(s), 3 blocked pattern(s), risky steps require approvedArtifact
+```
+
+The secret checks ask **git**, not `.gitignore`. The two disagree exactly when a file was added
+before the ignore rule was, which is the case that actually leaks a key — and deleting the file
+later does not help, because the history keeps it. Both states are tested against throwaway
+repositories in `apps/cli/src/commands/doctor.test.ts`.
+
+### Four gates, not one
+
+An action has to pass every layer that applies to it. Each exists because the layer above it can be
+bypassed by some legitimate route.
+
+| # | Where | Catches |
+|---|---|---|
+| 1 | **Decision** — `policyGate.check` in the model loop | A tool that is not allowed, or a destination outside the allowlist, before anything happens. Emits `policy_block`, and the model is told why and made to find another route. |
+| 2 | **Surface boundary** — `PolicyEnforcedSurface` | The same check where the action becomes real, so **replay passes it too** — there is no model in a replay, so layer 1 never runs. |
+| 3 | **Network** — Playwright request interception | What actually leaves the browser. A redirect or an injected asset cannot carry the session to another origin even if no engine code asked for it. |
+| 4 | **Pre-flight** — `replay/preflight.ts` | An artifact whose declared policy is not a subset of the global one refuses to run at all. |
+
+A **human who has taken control is not blocked** by layer 2. The reason to take control is usually
+that the screen is somewhere the engine could not go, so a gate that stopped them would disable
+escalation precisely when it is needed. Their action is recorded as `policy_override` with who did
+it — the auditable outcome rather than the silent one.
+
+### Points of no return
+
+`risk` in `policy.yaml` decides what counts as irreversible: button text, target URL, form submits,
+Enter inside a form, or the model flagging the step itself. The classifier returns two grades rather
+than one — `risky` (stop) and `sideEffect: possible` (record and proceed) — so that in the
+sub-account flow only `Open Account`, which actually moves money, escalates, while the validation
+step that merely re-renders the form does not. Escalating on both would teach an operator to click
+through the prompt that matters. See [ADR 0002](./docs/adr/0002-graded-risk-classification.md).
+
+What happens at a risky step is configurable, and differs by mode: discovery escalates to a human
+(or blocks, with `discovery.onRisky: block`); replay runs it only from an **approved** artifact, or
+pauses every time under `riskyStepsRequire: humanConfirm`, or never under `block`.
+
+### Secrets and redaction
+
+Secrets are referenced by name in an artifact and resolved from the environment at act time, so no
+credential is ever written into a capability. Values are substituted at the surface, after the
+model has produced its decision, so a secret never reaches the model at all. Everything written as
+evidence — events, artifacts, the stored prompt, failure narratives — passes through the redactor,
+and typed values into fields matching `redaction.sensitiveInputPattern` are masked whatever the
+artifact declares.
+
+### Known limits
+
+- **Screenshots are not masked.** They render whatever was on screen, member IDs included. The
+  schema types `maskEvidenceScreenshots` as the literal `false` so a deployment cannot claim the
+  masking exists by flipping a flag that does nothing. Every element the engine touches has a
+  recorded bbox, so blurring is a contained follow-up. See [evidence/README.md](./evidence/README.md).
+- **Evidence is written to the local filesystem unencrypted**, with no retention policy. A real
+  deployment wants an encrypted bucket with an expiry.
+- **The console has no authentication.** It binds to loopback only and assumes one trusted operator.
+  Multi-operator control needs identity, and the intervention record already has an `approvedBy`
+  field waiting for it.
+- **The target app holds synthetic data only** and never held anything else. That is what makes the
+  screenshots in this repository safe to publish; it is not an argument that they would be safe from
+  a real core banking system.
 
 ## Docs
 
@@ -366,3 +441,5 @@ redacted; see slice 009 and REPORT.md § Safety.
 - [openspec/ROADMAP.md](./openspec/ROADMAP.md) — build order
 - [docs/artifact-schema.md](./docs/artifact-schema.md) — the capability artifact, field by field, with rationale
 - [docs/error-taxonomy.md](./docs/error-taxonomy.md) — the four run outcomes and every failure code, with what to do about each
+- [docs/adr/](./docs/adr/) — decisions that departed from a slice's design, and what changed them
+- [policy.yaml](./policy.yaml) — everything the engine is allowed to do, in one validated file

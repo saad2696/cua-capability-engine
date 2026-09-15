@@ -1,10 +1,6 @@
 #!/usr/bin/env node
 /**
  * cua — command line entry point.
- *
- * Commands arrive in later slices:
- *   serve     (007)  start the engine server used by the operator console
- *   doctor    (009)  check environment, secrets, policy, target reachability
  */
 import "dotenv/config";
 import { ENGINE_NAME, SCHEMA_VERSION } from "@cua/engine";
@@ -13,6 +9,7 @@ import { observeCommand } from "./commands/observe.js";
 import { discoverCommand } from "./commands/discover.js";
 import { replayCommand } from "./commands/replay.js";
 import { serveCommand } from "./commands/serve.js";
+import { doctorCommand } from "./commands/doctor.js";
 
 const [command = "help", ...rest] = process.argv.slice(2);
 
@@ -29,11 +26,15 @@ Commands:
   discover    --goal "..." --url <url> --capability-id <id> [--param k=v] [--provider anthropic|fake]
   replay      <artifact.json> [--param k=v] [--plan] [--allow-draft] [--fault <name>[:sticky]] [--headed]
   serve       [--port 4200] [--headed]   control plane for the operator console (loopback only)
+  doctor      [--json] [--skip-network]  check secrets, policy and target before a run
 
-More commands are added slice by slice; see openspec/ROADMAP.md.`);
+Run \`cua doctor\` first: it verifies that no secret is tracked by git and that policy.yaml is valid.`);
 }
 
 switch (command) {
+  case "doctor":
+    await doctorCommand(rest);
+    break;
   case "serve":
     await serveCommand(rest);
     break;

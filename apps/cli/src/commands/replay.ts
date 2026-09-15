@@ -8,7 +8,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
-import { EvidenceWriter, PlaywrightSurface, Redactor, basicPolicy, newRunId, planLines, replay } from "@cua/engine";
+import { EvidenceWriter, PlaywrightSurface, PolicyEnforcedSurface, Redactor, newRunId, planLines, replay, runPolicy } from "@cua/engine";
 import { EXIT_CODES, validateCapability, type ReplayResult } from "@cua/schema";
 
 const SECRET_ENV = ["TARGET_USER", "TARGET_PASSWORD"];
@@ -19,7 +19,7 @@ export async function replayCommand(argv: string[]): Promise<void> {
     options: {
       param: { type: "string", multiple: true, default: [] }, plan: { type: "boolean", default: false }, "allow-draft": { type: "boolean", default: false },
       headed: { type: "boolean", default: false }, fault: { type: "string" }, "escalate-on-failure": { type: "boolean", default: false },
-      "evidence-name": { type: "string" }, json: { type: "boolean", default: false }, "risky": { type: "string", default: "approvedArtifact" },
+      "evidence-name": { type: "string" }, json: { type: "boolean", default: false }, "risky": { type: "string" },
       "resume-from": { type: "string" }, "timeout": { type: "string" },
     },
   });
@@ -54,9 +54,18 @@ export async function replayCommand(argv: string[]): Promise<void> {
   const redactor = new Redactor({ secrets: { ...secrets, ...Object.fromEntries(Object.entries(params).map(([k, v]) => [`param:${k}`, v])) } });
   const evidence = new EvidenceWriter(runId, process.env["CUA_EVIDENCE_DIR"] ?? "evidence", redactor, values["evidence-name"] ?? runId);
   const origins = (raw as { policy?: { allowedOrigins?: string[] } }).policy?.allowedOrigins ?? [];
-  const policy = basicPolicy({ allowedOrigins: origins.length ? origins : ["http://localhost:4100"], blockedUrlPatterns: ["/__faults", "/__reset"] });
+  // policy.yaml supplies every rule; the artifact supplies only which origin this capability runs
+  // against, which the file cannot know.
+  const { gate: policy, policy: doc, source: policySource } = runPolicy({ origins: origins.length ? origins : ["http://localhost:4100"] });
+  if (!values.json) console.log(`  policy: ${policySource}`);
   const surface = new PlaywrightSurface({ headless: !values.headed, allowRequest: (u) => policy.allowRequest(u), tracePath: join(evidence.dir, "trace.zip") });
   surface.onPageSwitch((u) => (policy.allowRequest(u) ? "adopt" : "close"));
+  // Enforcement layer 2: the allowlist is re-checked where the action becomes real, so a replay
+  // driven straight from the CLI — with no model and no session in the loop — passes the same gate.
+  const guarded = new PolicyEnforcedSurface(surface, {
+    gate: policy,
+    onBlock: (action, reason) => evidence.event({ type: "policy_block", action, reason, controller: "replay" }),
+  });
 
   const cookies: { url: string; name: string; value: string }[] = [];
   if (values.fault) {
@@ -69,12 +78,12 @@ export async function replayCommand(argv: string[]): Promise<void> {
   let result: ReplayResult;
   try {
     result = await replay({
-      artifact: raw, params, secrets, surface, evidence,
+      artifact: raw, params, secrets, surface: guarded, evidence,
       globalPolicy: { allowedOrigins: policy.allowedOrigins },
-      allowDraft: values["allow-draft"], riskyStepsRequire: values.risky as "approvedArtifact" | "humanConfirm" | "block",
-      escalateOnFailure: values["escalate-on-failure"], cookies,
+      allowDraft: values["allow-draft"] || !doc.replay.requireApprovedArtifact, riskyStepsRequire: (values.risky as "approvedArtifact" | "humanConfirm" | "block" | undefined) ?? doc.replay.riskyStepsRequire,
+      escalateOnFailure: values["escalate-on-failure"] || doc.replay.escalateOnFailure, cookies,
       ...(values["resume-from"] ? { startAtStepIndex: Number(values["resume-from"]) } : {}),
-      ...(values.timeout ? { runTimeoutMs: Number(values.timeout) } : {}),
+      runTimeoutMs: values.timeout ? Number(values.timeout) : doc.runTimeoutMs,
       log: (line) => { if (!values.json) console.log(`  ${line}`); },
     });
   } finally {

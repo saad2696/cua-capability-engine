@@ -7,7 +7,7 @@
  *   agent/       discovery loop, prompts                                               (005) done
  *   recorder/    action trace -> Capability artifact                                   (005) done
  *   evidence/    run folders, events.jsonl, screenshots, redactor                      (005) done
- *   policy/      basic allowlist + risk; full policy.yaml in 009                       (005/009)
+ *   policy/      policy.yaml loader, risk classifier, surface-boundary enforcement     (009) done
  *   replay/      preflight, executor, assertions, signatures, detectors, recovery      (006) done
  *   session/     controller state machine, leases                                      (007)
  *   escalation/  InterventionRequest, handoff, resume                                  (007)
