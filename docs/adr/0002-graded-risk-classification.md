@@ -2,7 +2,8 @@
 
 - **Slice:** 009 (policy and guardrails)
 - **Status:** accepted
-- **Departs from:** `openspec/changes/009-policy-guardrails/design.md`, "Risk classification"
+- **Departs from:** `openspec/changes/009-policy-guardrails/design.md`, "Risk classification" and the
+  `risk.formSubmitIsRisky` field of its policy.yaml sketch
 
 ## What the design called for
 

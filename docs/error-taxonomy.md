@@ -71,6 +71,14 @@ and a markdown narrative with a suggested next action.
 | `POLICY_VIOLATION` | The artifact's origins or actions exceed the global policy. |
 | `RUN_IN_PROGRESS` | The same capability is already running. Prevents double submission. |
 
+Earlier still, before any of the above: a `policy.yaml` that does not parse or does not satisfy the
+schema stops the run with the issues listed and **exit 2**, and the server answers **400** with the
+same issues rather than 500. A guardrail that cannot be read is a guardrail failure, and the loader
+deliberately does not fall back to the built-in defaults — silently widening what the engine may
+touch is the one response worse than refusing to start. `cua doctor` reports the same issues in the
+same words, and resolves the file the same way a run does, so the two cannot disagree about which
+policy is in force.
+
 Catching these before launching Chromium means a bad call costs milliseconds, not a browser session,
 and `stepsRun: 0` proves nothing touched the target app.
 

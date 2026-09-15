@@ -2,12 +2,15 @@
 
 - **Slice:** 007 (session control and escalation)
 - **Status:** accepted
-- **Departs from:** `openspec/changes/007-session-and-escalation/design.md`
+- **Departs from:** `openspec/changes/007-session-control-and-escalation/design.md`
 
 ## What the design called for
 
-Threading a lease token through `Surface.act` so the surface could refuse an action from a stale
-controller.
+> Invariants: exactly one controller or none; every `act` carries a lease token; the surface
+> rejects acts whose lease is not current (`CONTROL_VIOLATION`, logged).
+
+Threading a lease token through `Surface.act` so the surface itself could refuse an action from a
+stale controller.
 
 ## What was built
 

@@ -17,9 +17,22 @@ import { AnthropicProvider } from "../llm/AnthropicProvider.js";
 import type { LlmProvider } from "../llm/types.js";
 import { FrameStreamer, applyInput, type InputMessage } from "./live.js";
 import { RunRegistry, type RunRecord } from "./RunRegistry.js";
+import { PolicyLoadError } from "../policy/load.js";
+
+/**
+ * A run that cannot start. An invalid `policy.yaml` is the operator's typo, not a server fault, so
+ * it answers 400 with the issues rather than a 500 with a stack — otherwise the one error most
+ * likely to happen mid-demo is also the least legible.
+ */
+const startFailed = (res: Response) => (e: Error) => {
+  if (e instanceof PolicyLoadError) return void res.status(400).json({ error: "policy is invalid", source: e.source, issues: e.issues });
+  res.status(500).json({ error: e.message });
+};
 
 export interface ServerOptions {
   evidenceDir?: string;
+  /** Policy document this server's runs obey. Defaults to $CUA_POLICY, then ./policy.yaml. */
+  policyPath?: string;
   artifactsDir?: string;
   /** Secrets handed to replays started through the API. Never echoed back. */
   secrets?: Record<string, string>;
@@ -44,7 +57,7 @@ const publicRun = (r: RunRecord) => ({
 export function createServerApp(opts: ServerOptions = {}): { app: Express; registry: RunRegistry } {
   const evidenceRoot = opts.evidenceDir ?? "evidence";
   const artifactsDir = opts.artifactsDir ?? "artifacts";
-  const registry = new RunRegistry(evidenceRoot);
+  const registry = new RunRegistry(evidenceRoot, opts.policyPath);
   const app = express();
   app.use(express.json({ limit: "2mb" }));
 
@@ -76,7 +89,7 @@ export function createServerApp(opts: ServerOptions = {}): { app: Express; regis
         ...(opts.interventionTimeoutMs ? { interventionTimeoutMs: opts.interventionTimeoutMs } : {}),
       });
       res.status(201).json(publicRun(run));
-    })().catch((e: Error) => res.status(500).json({ error: e.message }));
+    })().catch(startFailed(res));
   });
 
   /** Server-sent events: the run's evidence log, live, plus a replay of what it missed. */
@@ -231,7 +244,7 @@ export function createServerApp(opts: ServerOptions = {}): { app: Express; regis
         ...(opts.interventionTimeoutMs ? { interventionTimeoutMs: opts.interventionTimeoutMs } : {}),
       });
       res.status(201).json(publicRun(run));
-    })().catch((e: Error) => res.status(500).json({ error: e.message }));
+    })().catch(startFailed(res));
   });
 
   /**

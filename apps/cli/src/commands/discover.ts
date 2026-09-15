@@ -1,6 +1,7 @@
 /**
  * cua discover --goal "..." --url <url> --capability-id <id> [--param k=v ...]
  *              [--provider anthropic|fake] [--model id] [--max-steps n] [--headed]
+ *              --max-steps defaults to policy.yaml's maxSteps (40).
  *              [--approve-risky] [--vendor legacy-cu-core] [--out <artifacts dir>]
  *
  * Runs the LLM-driven discovery loop against the live surface, records the successful run as

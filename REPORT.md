@@ -586,6 +586,21 @@ committed. A checker that cries wolf on the one file that has to stay readable g
 rule is now narrow — credential-shaped names must be blank, password-shaped names get a warning that
 names the value so a human can see at a glance that it is still `demo`.
 
+### A guardrail that throws is not yet a typed outcome
+
+Two new failure paths went in with tests asserting they throw — `PolicyLoadError` when the file will
+not parse, `PolicyViolation` when the surface refuses an action. Both tests passed, and both were
+measuring the wrong thing. `docs/error-taxonomy.md` promises that every outcome is one of four typed
+results with a defined exit code, and "it throws" is not one of them. Running the actual command
+showed a raw Node stack trace and exit 1; the server turned the same error into a 500, as though an
+operator's typo in `policy.yaml` were a server fault. Both now produce the taxonomy's answer — exit 2
+with the issues listed, 400 with the same issues — and there are tests at the boundary rather than
+at the throw site.
+
+The general shape, which is the third time it has come up in this project: a test that asserts an
+internal mechanism fires says nothing about what a caller sees. The lease tests, the redaction test
+and now this one all had to be rewritten to assert at the edge.
+
 ### What is redacted, and what is not
 
 Secrets are referenced by name in an artifact and resolved from the environment at act time, so no

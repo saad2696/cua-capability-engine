@@ -91,7 +91,15 @@ export class RunRegistry {
   private readonly runs = new Map<string, RunRecord>();
   private readonly listeners = new Set<(r: RunRecord) => void>();
 
-  constructor(private readonly evidenceRoot: string) {}
+  /**
+   * `policyPath` is explicit rather than read from the ambient environment so that a test can point
+   * one server at one policy file without mutating `process.env`, which every other test file in a
+   * parallel run would see. Left undefined, `runPolicy()` resolves it the way the CLI does.
+   */
+  constructor(
+    private readonly evidenceRoot: string,
+    private readonly policyPath?: string,
+  ) {}
 
   list(): RunRecord[] {
     return [...this.runs.values()].sort((a, b) => b.startedAt.localeCompare(a.startedAt));
@@ -127,7 +135,7 @@ export class RunRegistry {
     const redactor = new Redactor({ secrets: { ...secrets, ...Object.fromEntries(Object.entries(params).map(([k, v]) => [`param:${k}`, v])) } });
     const evidence = new EvidenceWriter(runId, this.evidenceRoot, redactor);
     const origins = raw.policy?.allowedOrigins?.length ? raw.policy.allowedOrigins : ["http://localhost:4100"];
-    const { gate: policy, policy: doc } = runPolicy({ origins });
+    const { gate: policy, policy: doc } = runPolicy({ origins, ...(this.policyPath ? { path: this.policyPath } : {}) });
     const surface = new PlaywrightSurface({ headless: input.headless ?? true, allowRequest: (u) => policy.allowRequest(u), tracePath: join(evidence.dir, "trace.zip") });
     surface.onPageSwitch((u) => (policy.allowRequest(u) ? "adopt" : "close"));
 
@@ -235,7 +243,7 @@ export class RunRegistry {
 
     const redactor = new Redactor({ secrets: { ...secrets, ...Object.fromEntries(Object.entries(params).map(([k, v]) => [`param:${k}`, v])) } });
     const evidence = new EvidenceWriter(runId, this.evidenceRoot, redactor);
-    const { gate: policy, policy: doc } = runPolicy({ origins: [origin] });
+    const { gate: policy, policy: doc } = runPolicy({ origins: [origin], ...(this.policyPath ? { path: this.policyPath } : {}) });
     const surface = new PlaywrightSurface({ headless: input.headless ?? true, allowRequest: (u) => policy.allowRequest(u), tracePath: join(evidence.dir, "trace.zip") });
     surface.onPageSwitch((u) => (policy.allowRequest(u) ? "adopt" : "close"));
 

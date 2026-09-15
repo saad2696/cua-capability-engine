@@ -139,4 +139,22 @@ describe("cua doctor", () => {
       else process.env["ANTHROPIC_API_KEY"] = prev;
     }
   });
+
+  it("checks the same file a run would read, when $CUA_POLICY names one", async () => {
+    // doctor answering about a different file than runPolicy() reads would make the one command
+    // whose job is "which rules are in force?" the one command that can be wrong about it.
+    const dir = repo((d) => writeFileSync(join(d, "policy.yaml"), "version: 1\nallowedOrigins: []\n"));
+    const other = repo((d) => writeFileSync(join(d, "README.md"), "#\n"));
+    const prev = process.env["CUA_POLICY"];
+    process.env["CUA_POLICY"] = join(dir, "policy.yaml");
+    try {
+      // Run against a directory with no policy of its own: the env var must still be what is checked.
+      const r = await run(other);
+      expect(r.ok).toBe(false);
+      expect(r.checks.some((c) => c.name === "policy.yaml" && c.level === "fail")).toBe(true);
+    } finally {
+      if (prev === undefined) delete process.env["CUA_POLICY"];
+      else process.env["CUA_POLICY"] = prev;
+    }
+  });
 });

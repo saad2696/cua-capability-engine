@@ -6,7 +6,7 @@
  * stopped at, the browser is never restarted, and the value the flow finally extracts is the one a
  * human's own clicks made reachable.
  */
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import type { Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -374,4 +374,31 @@ describe("an error the engine cannot handle becomes a handover", () => {
     // identical resume for the same answer.
     expect(events.split('"resumeAt":"same"').length - 1).toBe(2);
   }, 150_000);
+});
+
+describe("a run that cannot start", () => {
+  it("answers 400 with the issues when policy.yaml is invalid, rather than 500 with a stack", async () => {
+    // The likeliest failure during a demo is someone editing policy.yaml and mistyping it. That has
+    // to read like the checker, not like a server fault: this is the operator's error to fix.
+    //
+    // The bad policy is handed to its own server instance rather than set in process.env, which
+    // every other test file in a parallel run would inherit.
+    const dir = mkdtempSync(join(tmpdir(), "cua-badpolicy-"));
+    writeFileSync(join(dir, "policy.yaml"), "version: 1\nallowedOrigins: []\n");
+    const bad = await startServer(0, { evidenceDir: dir, policyPath: join(dir, "policy.yaml") });
+    try {
+      const res = await fetch(`http://127.0.0.1:${bad.port}/api/replay`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ artifact: JSON.parse(readFileSync(artifactPath, "utf8")), params: { memberId: "10042" }, allowDraft: true }),
+      });
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as { error: string; issues: { path: string }[] };
+      expect(body.error).toBe("policy is invalid");
+      expect(body.issues.map((i) => i.path)).toContain("allowedOrigins");
+    } finally {
+      await bad.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });

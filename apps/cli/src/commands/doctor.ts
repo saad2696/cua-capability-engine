@@ -99,7 +99,9 @@ function checkEnv(out: Check[]): void {
 }
 
 function checkPolicy(root: string, out: Check[]): string[] {
-  const path = join(root, "policy.yaml");
+  // Resolve exactly the way `runPolicy()` does, or this command answers "which rules ran?" about a
+  // different file than the one a run reads — which is the single question it exists to answer.
+  const path = process.env["CUA_POLICY"] ?? join(root, "policy.yaml");
   const loaded = loadPolicy(path);
   if (!loaded.ok) {
     for (const i of loaded.issues) out.push({ name: "policy.yaml", level: "fail", detail: `${i.path}: ${i.message}` });
@@ -108,7 +110,7 @@ function checkPolicy(root: string, out: Check[]): string[] {
   out.push({
     name: "policy.yaml",
     level: "ok",
-    detail: `${loaded.source} — ${loaded.policy.allowedOrigins.length} origin(s), ${loaded.policy.blockedUrlPatterns.length} blocked pattern(s), risky steps require ${loaded.policy.replay.riskyStepsRequire}`,
+    detail: `${loaded.source}${process.env["CUA_POLICY"] ? " (via $CUA_POLICY)" : ""} — ${loaded.policy.allowedOrigins.length} origin(s), ${loaded.policy.blockedUrlPatterns.length} blocked pattern(s), risky steps require ${loaded.policy.replay.riskyStepsRequire}`,
   });
   if (loaded.source === "built-in defaults") out.push({ name: "policy.yaml present", level: "warn", detail: `no ${path}; the built-in defaults are in force` });
   return loaded.policy.allowedOrigins;
