@@ -1,0 +1,261 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Shooting script — CUA Capability Engine walkthrough</title>
+<style>
+  @page { size: A4; margin: 15mm 14mm; }
+  :root { --ink:#16181d; --mute:#5b6270; --rule:#d9dde5; --accent:#1c4f9c; --warn:#8a5300; --code:#f4f6fa; --go:#1d6b3f; }
+  * { box-sizing: border-box; }
+  body { font: 10.5pt/1.5 -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; color: var(--ink); max-width: 850px; margin: 0 auto; padding: 22px; background:#fff; }
+  h1 { font-size: 20pt; margin: 0 0 3px; }
+  .sub { color: var(--mute); margin: 0 0 14px; font-size: 10pt; }
+  h2 { font-size: 13.5pt; margin: 0 0 8px; padding: 6px 0 6px 11px; border-left: 5px solid var(--accent); background:#eef2f9; page-break-after: avoid; }
+  h3 { font-size: 11pt; margin: 14px 0 4px; color: var(--accent); page-break-after: avoid; }
+  .shot { page-break-inside: avoid; border: 1px solid var(--rule); border-radius: 5px; padding: 10px 12px; margin: 10px 0; }
+  .shot > .hd { display:flex; justify-content:space-between; align-items:baseline; gap:10px; border-bottom:1px solid var(--rule); padding-bottom:5px; margin-bottom:7px; }
+  .shot .n { font-weight:700; font-size:11pt; }
+  .shot .t { font-size:8.5pt; color:var(--mute); white-space:nowrap; letter-spacing:.04em; }
+  .where { font-size:8.5pt; text-transform:uppercase; letter-spacing:.07em; color:#fff; background:var(--accent); padding:1px 7px; border-radius:9px; white-space:nowrap; }
+  .where.term { background:#3a3f4a; }
+  .where.both { background:#6a4b9c; }
+  code, kbd { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 8.8pt; background: var(--code); padding: 1px 4px; border-radius: 3px; }
+  pre { background: var(--code); border-left: 3px solid var(--accent); padding: 8px 10px; overflow-x: auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 8.4pt; line-height: 1.4; margin: 6px 0; }
+  pre code { background:none; padding:0; font-size:inherit; }
+  .say { margin: 7px 0 3px; padding: 7px 11px; border-left: 3px solid var(--warn); background: #fdf8ef; font-style: italic; }
+  .say::before { content:"SAY  "; font-style:normal; font-weight:700; color:var(--warn); font-size:8pt; letter-spacing:.08em; }
+  .show { margin: 6px 0 3px; padding: 6px 11px; border-left: 3px solid var(--go); background:#f0f7f2; font-size:9.6pt; }
+  .show::before { content:"ON SCREEN  "; font-weight:700; color:var(--go); font-size:8pt; letter-spacing:.08em; }
+  .warn { font-size:9.3pt; color:var(--warn); margin:5px 0 0; }
+  .warn::before { content:"⚠ "; }
+  table { border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 9.2pt; page-break-inside: avoid; }
+  th, td { text-align:left; vertical-align:top; padding:4px 7px; border-bottom:1px solid var(--rule); }
+  th { background:#eef1f6; font-weight:600; }
+  ul, ol { padding-left:19px; margin:5px 0; } li { margin:2px 0; }
+  .note { font-size:9.3pt; color:var(--mute); }
+  .pagebreak { page-break-before: always; }
+  @media print { body { padding:0; } }
+</style>
+
+<h1>Shooting script</h1>
+<p class="sub">Computer-Use Automation System · ~14 minutes · every shot: where you are, what you type, what to say</p>
+
+<p class="note">Two windows only, and never anything else on screen: a <strong>terminal</strong> and
+<strong>Chrome</strong>. Each shot is tagged with which one you should be recording. The design
+reasoning behind all of this is in <code>docs/demo-narration.pdf</code> — this file is purely
+operational.</p>
+
+<h2>Timeline</h2>
+<table>
+  <tr><th style="width:7%">#</th><th style="width:34%">Shot</th><th style="width:12%">Where</th><th style="width:10%">Length</th><th>The one point</th></tr>
+  <tr><td>0</td><td>Setup (not recorded)</td><td>Terminal</td><td>—</td><td>Reset state, start services</td></tr>
+  <tr><td>1</td><td>The legacy app</td><td>Chrome</td><td>1:00</td><td>This is what you have to automate</td></tr>
+  <tr><td>2</td><td>Discovery — learn G1</td><td>Terminal</td><td>1:30</td><td>The model is a compiler, not a runtime</td></tr>
+  <tr><td>3</td><td>The artifact</td><td>Terminal</td><td>0:45</td><td>A contract, not a transcript</td></tr>
+  <tr><td>4</td><td>Refusal → approve → replay</td><td>Both</td><td>1:30</td><td>2 seconds, no model; approval is a human decision</td></tr>
+  <tr><td>5</td><td>Three kinds of wrong</td><td>Terminal</td><td>2:00</td><td>Exit codes a caller can branch on</td></tr>
+  <tr><td>6</td><td>Human takes the live session</td><td>Chrome</td><td>3:00</td><td>Same session, resumed mid-flow</td></tr>
+  <tr><td>7</td><td>Learn something new, live</td><td>Terminal</td><td>2:00</td><td>It generalises — 25s to learn</td></tr>
+  <tr><td>8</td><td>The flow that commits</td><td>Both</td><td>2:30</td><td>One policy line = account opened or not</td></tr>
+  <tr><td>9</td><td>Safety and evidence</td><td>Terminal</td><td>1:00</td><td>Guardrails, and the honest limits</td></tr>
+  <tr><td>10</td><td>Close</td><td>—</td><td>0:30</td><td>The thesis in one sentence</td></tr>
+</table>
+
+<!-- ─────────────── SHOT 0 ─────────────── -->
+<div class="shot">
+  <div class="hd"><span class="n">0 · Setup</span><span class="where term">Terminal</span><span class="t">NOT RECORDED</span></div>
+<pre><code>cd ~/orca/projects/portal-all-hands
+
+# 1. free the ports — a stale process makes the engine die silently
+lsof -ti:4100,4200,4300 | xargs kill -9 2>/dev/null
+
+# 2. the live-learn goal must NOT exist yet (shot 7 depends on this)
+rm -f artifacts/member-branch-and-tenure@1.json
+
+# 3. check state: G1@2 must be draft, G2@1 must be approved
+grep -o '"status": "[a-z]*"' artifacts/*.json
+
+# 4. health check, then start everything
+pnpm cua doctor          # expect 8 ok, 1 warning, 0 failures
+pnpm demo                # wait for all three "ready" lines</code></pre>
+  <p class="warn">Record the <strong>terminal window only</strong>, never the full screen — your
+  <code>.env</code> holds a live API key. Close any editor showing it. Font large enough to read at
+  1080p (14–16pt).</p>
+</div>
+
+<!-- ─────────────── SHOT 1 ─────────────── -->
+<div class="shot">
+  <div class="hd"><span class="n">1 · The legacy app</span><span class="where">Chrome</span><span class="t">1:00</span></div>
+  <div class="show"><code>localhost:4100</code> → sign in <code>demo / demo</code> → type <code>10042</code> → Search. Land on the Member Detail page and pause there.</div>
+  <div class="say">"This is the kind of core banking UI that still runs in production and that nobody is going to rewrite. Framesets, table layouts, no API, no test ids. The value I want — this savings balance — is in an unlabelled table cell. Every design decision after this follows from that constraint."</div>
+  <p class="note">Optional, five seconds: right-click → View Source, scroll once, close it. It makes the "the model never sees raw HTML" line in shot 2 land harder.</p>
+</div>
+
+<!-- ─────────────── SHOT 2 ─────────────── -->
+<div class="shot">
+  <div class="hd"><span class="n">2 · Discovery — learn G1</span><span class="where term">Terminal</span><span class="t">1:30</span></div>
+<pre><code>pnpm cua discover \
+  --goal "Look up member {memberId} and read the current balance of their Savings account." \
+  --url http://localhost:4100/ --capability-id member-savings-balance --param memberId=10042</code></pre>
+  <div class="say">"I give it a goal in plain English and a URL. It signs in, searches, and reads the balance — about eight model calls, seven cents."</div>
+  <p><strong>While it runs</strong>, say the two things that matter:</p>
+  <div class="say">"The model never sees raw HTML. It sees an accessibility tree flattened across the frames, plus a screenshot with every interactive element numbered — which is roughly what a human operator perceives. And <code>{memberId}</code> is a parameter, while the password is a reference to an environment variable. The literal value is substituted at the browser <em>after</em> the model has decided, so a credential never reaches the model, the transcript, or the artifact."</div>
+</div>
+
+<!-- ─────────────── SHOT 3 ─────────────── -->
+<div class="shot">
+  <div class="hd"><span class="n">3 · The artifact</span><span class="where term">Terminal</span><span class="t">0:45</span></div>
+<pre><code>pnpm cua artifact summary artifacts/member-savings-balance@1.json</code></pre>
+  <div class="show">The step list with <code>&lt;secret TARGET_PASSWORD&gt;</code> and <code>{memberId}</code> visible as references.</div>
+  <div class="say">"That is the output — and it is not a transcript. It is a typed, versioned contract: declared inputs and outputs, every step with its locator fallbacks, what each step expects to be true afterwards, and a catalog of the conditions this flow knows how to handle. Someone can review and approve this without reading a log. That is the whole point."</div>
+</div>
+
+<!-- ─────────────── SHOT 4 ─────────────── -->
+<div class="shot">
+  <div class="hd"><span class="n">4 · Refusal → approve → replay</span><span class="where both">Both</span><span class="t">1:30</span></div>
+  <p><strong>4a — terminal.</strong> Lead with the refusal. It is the beat people remember.</p>
+<pre><code>pnpm cua replay artifacts/member-savings-balance@2.json --param memberId=10042
+#   → FAILURE ARTIFACT_NOT_APPROVED   (0 steps, 3ms)</code></pre>
+  <div class="say">"A model worked this out once. That does not make it allowed to run unattended. Notice it refused in three milliseconds without even opening a browser."</div>
+  <p><strong>4b — Chrome.</strong> Console → <strong>Capabilities</strong> → <code>member-savings-balance@2</code> → <strong>Approve for unattended replay</strong>.</p>
+  <div class="show">Before clicking approve, scroll the contract once: inputs, outputs, secrets, origins, and a step showing its <em>fallbacks: label → css → visual</em>.</div>
+  <div class="say">"This is the review surface. Approval is a human decision made once, here, rather than on every run."</div>
+  <p><strong>4c — terminal.</strong></p>
+<pre><code>pnpm cua replay artifacts/member-savings-balance@2.json --param memberId=10042
+#   → SUCCESS  {"savingsBalance":{"amount":1234.56,"currency":"USD"}}   ~2s
+
+pnpm cua replay artifacts/member-savings-balance@2.json --param memberId=10077
+#   → SUCCESS  $8,900.04</code></pre>
+  <div class="say">"Two seconds, no model, no API cost, and the same answer every time. The second member proves the parameter is real rather than baked into the recording."</div>
+</div>
+
+<!-- ─────────────── SHOT 5 ─────────────── -->
+<div class="shot">
+  <div class="hd"><span class="n">5 · Three kinds of wrong</span><span class="where term">Terminal</span><span class="t">2:00</span></div>
+  <p>Run all three, then talk. <strong>Read the exit codes aloud</strong> — that is the shot.</p>
+<pre><code>pnpm cua replay artifacts/member-savings-balance@2.json --param memberId=99999
+#   → BUSINESS_OUTCOME MEMBER_NOT_FOUND            exit 0
+
+pnpm cua replay artifacts/member-savings-balance@2.json --param memberId=10042 --fault session_expired
+#   → SUCCESS, recovered via the login prelude     exit 0
+
+pnpm cua replay artifacts/member-savings-balance@2.json --param memberId=10042 --fault session_expired:sticky
+#   → FAILURE RECOVERY_LOOP                        exit 2</code></pre>
+  <div class="say">"Three different kinds of wrong. 'No such member' is an <em>answer</em>, not an error — the automation worked perfectly, so exit zero and the caller gets a typed business outcome. If that paged somebody, people would start ignoring the alerts. A session expiry is recoverable, so it re-runs the login and carries on, and the caller never learns it happened. The same expiry that never clears is bounded after two attempts and reported as a failure. A caller can branch on these without parsing a log."</div>
+  <div class="show">Then: <code>cat evidence/replay-g1-recovery-loop/failure-*.md</code> — expected state, observed state, suggested next action.</div>
+  <div class="say">"Every failure carries a bundle like this, with screenshots and an accessibility snapshot beside it."</div>
+</div>
+
+<!-- ─────────────── SHOT 6 ─────────────── -->
+<div class="shot pagebreak">
+  <div class="hd"><span class="n">6 · A human takes the live session</span><span class="where">Chrome</span><span class="t">3:00</span></div>
+  <p class="note">The most important shot in the video. Do not rush it.</p>
+  <p><strong>6a — set it up.</strong> Console → <strong>Start</strong>:</p>
+  <table>
+    <tr><th style="width:32%">Field</th><th>Value</th></tr>
+    <tr><td>Capability</td><td><code>member-savings-balance@2</code></td></tr>
+    <tr><td>Pace</td><td><strong>Watchable — a beat between steps</strong></td></tr>
+    <tr><td>Break something</td><td><strong>Undeclared error on the next click</strong></td></tr>
+    <tr><td>memberId</td><td><code>10042</code></td></tr>
+  </table>
+  <p class="warn">Pace <em>must</em> be Watchable. At full speed the run finishes before the live viewport draws a single frame, and the live view is the most convincing thing in the demo.</p>
+  <p>Press <strong>Replay</strong>.</p>
+
+  <p><strong>6b — it stops by itself.</strong> Wait. Do not touch anything.</p>
+  <div class="show">Banner: <code>UNKNOWN_DIALOG: alert "Core banking link unavailable (ERR-7731)"</code> · state <strong>paused</strong> · viewport labelled <strong>"nobody is driving"</strong> · a <strong>Waiting</strong> badge appears in the nav.</div>
+  <div class="say">"It stopped on its own. That dialog is not in this capability's outcome catalog, so it refuses to touch it. An automation that dismisses dialogs it does not recognise is an automation that will eventually dismiss something expensive."</div>
+  <p class="note">The fault fires during sign-in, not at the search — the dialog attaches to the first click or focus. That is normal; don't be thrown by it.</p>
+
+  <p><strong>6c — take over.</strong> Click <strong>Take control</strong>.</p>
+  <div class="show">State → <strong>human control</strong>; badge → <strong>"you are driving"</strong>; Accept / Dismiss buttons appear over the live frame.</div>
+  <div class="say">"Now I am driving the automation's own browser. Not a screenshot, not a copy — the same session, same cookies, same frames."</div>
+  <p>Click <strong>Dismiss</strong>. The badge turns to <strong>LIVE</strong> and you see the sign-in form.</p>
+
+  <p><strong>6d — hand back.</strong> Click <strong>Hand back</strong> (mode: <em>Retry the step</em>). Wait for it to finish.</p>
+  <div class="show">Header: <strong>completed · success</strong>. Replay panel: <strong>7 steps</strong>, balance <code>$1,234.56</code>.</div>
+  <div class="say">"Seven steps. An uninterrupted run of this capability is also seven steps — so it resumed the step it stopped at, inside the session it paused in. It did not restart the browser, and the page it carried on from is the one my own clicks left behind."</div>
+  <p><strong>6e —</strong> click <strong>Waiting</strong> in the nav.</p>
+  <div class="show"><code>resolved · replay failure · same · by operator-1</code></div>
+  <div class="say">"And the handover is in the audit trail: who claimed it, what they decided, when."</div>
+</div>
+
+<!-- ─────────────── SHOT 7 ─────────────── -->
+<div class="shot">
+  <div class="hd"><span class="n">7 · Learn something new, live</span><span class="where term">Terminal</span><span class="t">2:00</span></div>
+  <div class="say">"Everything so far used capabilities I built beforehand. So let me teach it something it has never seen, now."</div>
+<pre><code>pnpm cua discover \
+  --goal "Look up member {memberId} and report which branch they belong to and the date they have been a member since." \
+  --url http://localhost:4100/ --capability-id member-branch-and-tenure --param memberId=10042 \
+  --name "Member branch and tenure"</code></pre>
+  <p class="note">Let it run in <strong>silence</strong> for the first few seconds. Watching it decide is
+  more persuasive than being talked over. Takes ~25s, 8 calls, ~$0.074.</p>
+  <div class="show">The step list appearing live, then: <code>artifact: artifacts/member-branch-and-tenure@1.json (draft; 4 steps, 1 prelude)</code></div>
+  <div class="say">"Two outputs this time, and they come from a different table than the balance did. It worked out a re-readable anchor for each — 'the cell to the right of the label Branch'. That anchor is what makes the replay deterministic."</div>
+<pre><code>pnpm cua replay artifacts/member-branch-and-tenure@1.json --param memberId=10042 --allow-draft
+#   → {"branch":"Main Street","memberSince":"2014-03-11"}   ~2.2s
+
+pnpm cua replay artifacts/member-branch-and-tenure@1.json --param memberId=10077 --allow-draft
+#   → {"branch":"Riverside","memberSince":"2018-09-30"}</code></pre>
+  <div class="say">"Twenty-five seconds to learn it, two seconds to run it, and it generalises to a member it was never shown. That is the whole thesis: the expensive, non-deterministic part happens once."</div>
+</div>
+
+<!-- ─────────────── SHOT 8 ─────────────── -->
+<div class="shot pagebreak">
+  <div class="hd"><span class="n">8 · The flow that commits</span><span class="where both">Both</span><span class="t">2:30</span></div>
+  <div class="say">"Everything so far only read data. This one opens an account."</div>
+  <p><strong>8a — terminal.</strong> Show the evidence of the real run rather than running it live (a live run here is 40 seconds of dead air).</p>
+<pre><code>cat evidence/discovery-g2-open-subaccount/run.json
+python3 -m json.tool evidence/discovery-g2-open-subaccount/interventions.json | grep -E '"reason"|"status"|"resolvedBy"'</code></pre>
+  <div class="show">15 steps, 15 calls, $0.14 — and <strong>three</strong> interventions.</div>
+  <div class="say">"It stopped three times. Two were the policy: the button whose label matches the irreversible list, and the browser's own confirm dialog — which is the step that actually opens the account, so it is treated as a separate decision. The <em>first</em> one the model raised by itself, before any rule fired: it reached the review screen and asked for a human on its own initiative."</div>
+
+  <p><strong>8b — Chrome.</strong> Capabilities → <code>member-open-subaccount@1</code>, scroll to steps 7 and 8.</p>
+  <div class="show">Both tagged <strong>risky · point of no return</strong>, with the model's recorded reasoning underneath.</div>
+
+  <p><strong>8c — terminal.</strong> The closing pair. Same artifact, same parameters.</p>
+<pre><code>pnpm cua replay artifacts/member-open-subaccount@1.json --param memberId=10042
+#   → SUCCESS  {"confirmationNumber":"CU-7000xx"}  side effects: committed   exit 0
+
+pnpm cua replay artifacts/member-open-subaccount@1.json --param memberId=10042 --risky block
+#   → FAILURE POLICY_VIOLATION                     side effects: none        exit 2</code></pre>
+  <div class="say">"Same capability, same inputs, one line of policy different — and the difference is whether an account gets opened at all. The guardrail belongs to the deployment, not to the recorded flow."</div>
+  <div class="show">Optional: refresh the member page in the bank UI to show the new sub-account.</div>
+  <div class="say">"And the confirmation number changes on every run, because every run really does open an account. That is what 'committed' means here."</div>
+</div>
+
+<!-- ─────────────── SHOT 9 ─────────────── -->
+<div class="shot">
+  <div class="hd"><span class="n">9 · Safety and evidence</span><span class="where term">Terminal</span><span class="t">1:00</span></div>
+<pre><code>pnpm cua doctor</code></pre>
+  <div class="say">"The secret check asks git, not <code>.gitignore</code>. Those two disagree exactly when a file was staged before the ignore rule was written — which is the case that actually leaks a key — and deleting it later does not help, because the history keeps it."</div>
+<pre><code>cat policy.yaml        # scroll slowly
+ls evidence/</code></pre>
+  <div class="say">"Everything the engine may do is this one validated file, loaded by every entry point. Four layers enforce it: the model's decision, the surface boundary, the network, and a pre-flight check on the artifact. A human who takes control is <em>not</em> blocked by it — they are recorded as an override, because refusing them would disable escalation exactly when it is needed."</div>
+  <p><strong>Finish on the limit, out loud.</strong> It is a strength, not a weakness.</p>
+  <div class="say">"And the honest part: screenshots are not masked. They render whatever was on screen, member IDs included. The structured evidence is redacted and there is a test that walks every file a run writes — but a grep cannot see inside a PNG, so the schema pins that flag to false and it is written down in the README. Everything here is synthetic data in an app I wrote."</div>
+</div>
+
+<!-- ─────────────── SHOT 10 ─────────────── -->
+<div class="shot">
+  <div class="hd"><span class="n">10 · Close</span><span class="where">—</span><span class="t">0:30</span></div>
+  <div class="say">"So: an LLM works the task out once, under policy, with a human for anything irreversible. What it learned becomes a typed artifact that a person approves — and that artifact runs in two seconds with no model and no API cost. When the application does something it has not seen, it stops and hands a person the same live browser rather than guessing. The model is a compiler, not a runtime."</div>
+  <p class="note">If you want one more sentence, make it the honest one — it lands better than a feature:</p>
+  <div class="say">"The most useful thing I found building this was that the flow that commits money was <em>impossible</em> for the system to complete, while the entire test suite was green. It only showed up when I drove the real application to its point of no return."</div>
+</div>
+
+<h2 class="pagebreak">If something goes wrong on camera</h2>
+<table>
+  <tr><th style="width:34%">Symptom</th><th>Cause and fix</th></tr>
+  <tr><td>Engine exits immediately on <code>pnpm demo</code></td><td>Stale process on 4200. <code>lsof -ti:4100,4200,4300 | xargs kill -9</code>, then restart.</td></tr>
+  <tr><td>Shot 4 does not refuse</td><td><code>member-savings-balance@2</code> is already approved from a rehearsal. Set <code>"status": "draft"</code> and remove <code>approvedBy</code>/<code>approvedAt</code> from <code>provenance</code>.</td></tr>
+  <tr><td>Shot 6 finishes before you can click</td><td>Pace was left at Full speed. Restart with <em>Watchable</em>.</td></tr>
+  <tr><td>Shot 7 says the capability already exists</td><td>You rehearsed it. <code>rm -f artifacts/member-branch-and-tenure@1.json</code> and delete its evidence directory.</td></tr>
+  <tr><td>Confirmation number is not CU-700001</td><td>Expected — it climbs within a session. Restarting the target app resets it. Say so; it proves the run committed.</td></tr>
+  <tr><td>Console shows "Connecting to the engine…"</td><td>The engine is not up yet. Wait for its ready line before switching windows.</td></tr>
+  <tr><td>A command runs stale code</td><td>You edited source since the last build. <code>pnpm --filter @cua/engine build</code>.</td></tr>
+</table>
+
+<h3>Cut-down versions</h3>
+<ul>
+  <li><strong>8 minutes</strong> — drop shot 3 (fold the artifact into shot 4) and shot 9; shorten shot 5 to the first two commands.</li>
+  <li><strong>5 minutes</strong> — shots 1, 4, 6, 8 only. That is still the full argument: legacy UI, deterministic replay, human handover, guarded commit.</li>
+  <li><strong>If you can only keep two</strong> — shot 6 and shot 8.</li>
+</ul>
