@@ -477,6 +477,7 @@ artifact declares.
 - [docs/error-taxonomy.md](./docs/error-taxonomy.md) — the four run outcomes and every failure code, with what to do about each
 - [docs/adr/](./docs/adr/) — decisions that departed from a slice's design, and what changed them
 - [docs/demo-script.md](./docs/demo-script.md) — the running order for the walkthrough video, act by act
-- [docs/demo-narration.html](./docs/demo-narration.html) — the walkthrough in six steps: problem, decisions, cases, extras, demo, disclaimers (print to PDF)
+- [docs/demo-narration.pdf](./docs/demo-narration.pdf) — the walkthrough in six steps: problem, decisions, cases, extras, demo, disclaimers
+  (source: `docs/demo-narration.html`; regenerate with `node scripts/to-pdf.mjs docs/demo-narration.html`)
 - [docs/diagrams/](./docs/diagrams/) — mermaid sources: the life of a capability, and the runtime components
 - [policy.yaml](./policy.yaml) — everything the engine is allowed to do, in one validated file
