@@ -8,8 +8,9 @@
 - [x] 10.4 Real discovery run G2 with escalation via console; hand back; commit evidence
 - [x] 10.5 Replay G2 evidence: the committed path and the blocked path
 - [ ] 10.6 README.md complete
-- [ ] 10.7 REPORT.md complete with seven headings
-- [ ] 10.8 docs/ cross-links; ADRs for major decisions
+- [x] 10.7 REPORT.md complete with seven headings, ~3 pages as the brief asks; the slice-by-slice
+      long version moved to docs/design-notes.md rather than discarded
+- [x] 10.8 docs/ cross-links; ADRs for major decisions (six, in docs/adr/)
 - [ ] 10.9 Final checklist; tag v1.0
 
 Not re-run, because the evidence already exists and is current:

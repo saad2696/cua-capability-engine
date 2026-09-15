@@ -471,6 +471,8 @@ artifact declares.
 
 ## Docs
 
+- [REPORT.md](./REPORT.md) — the design write-up: architecture, schema, determinism, heterogeneity, escalation, safety, cuts
+- [docs/design-notes.md](./docs/design-notes.md) — the long version, written slice by slice as the work happened
 - [openspec/project.md](./openspec/project.md) — decisions and conventions
 - [openspec/ROADMAP.md](./openspec/ROADMAP.md) — build order
 - [docs/artifact-schema.md](./docs/artifact-schema.md) — the capability artifact, field by field, with rationale
