@@ -15,6 +15,17 @@ import { doctorCommand } from "./doctor.js";
 
 const made: string[] = [];
 
+/**
+ * Key-shaped fixtures, assembled at runtime.
+ *
+ * Written as a literal they would be the only key-shaped strings in the repository, and
+ * `cua doctor`'s own "no API key in tracked files" check would fail on the file that tests it —
+ * a checker that cries wolf on its own fixtures is a checker people learn to skip. Joining the
+ * pieces keeps the literal out of the tracked source while the temporary repo still gets a string
+ * the detector must catch.
+ */
+const fakeKey = (suffix: string) => ["sk", "ant", suffix].join("-");
+
 function repo(setup: (dir: string) => void): string {
   const dir = mkdtempSync(join(tmpdir(), "cua-doctor-"));
   made.push(dir);
@@ -59,7 +70,7 @@ describe("cua doctor", () => {
       writeFileSync(join(d, ".gitignore"), ".env\n");
       writeFileSync(join(d, ".env.example"), "ANTHROPIC_API_KEY=\nTARGET_APP_URL=http://localhost:4100\n");
       // Untracked because it is ignored — the case that must pass.
-      writeFileSync(join(d, ".env"), "ANTHROPIC_API_KEY=sk-ant-realkeygoeshere\n");
+      writeFileSync(join(d, ".env"), `ANTHROPIC_API_KEY=${fakeKey("realkeygoeshere")}\n`);
     });
     const r = await run(dir);
     expect(find(r, ".env is untracked")?.level).toBe("ok");
@@ -69,7 +80,7 @@ describe("cua doctor", () => {
 
   it("fails when .env is tracked, even though .gitignore names it", async () => {
     const dir = repo((d) => {
-      writeFileSync(join(d, ".env"), "ANTHROPIC_API_KEY=sk-ant-committedbymistake\n");
+      writeFileSync(join(d, ".env"), `ANTHROPIC_API_KEY=${fakeKey("committedbymistake")}\n`);
       execFileSync("git", ["add", "-f", ".env"], { cwd: d, stdio: "ignore" });
       // Added to .gitignore *after* the file was staged: the exact state where reading .gitignore
       // would report all clear while git is still tracking the file.
@@ -82,7 +93,7 @@ describe("cua doctor", () => {
   });
 
   it("fails when a key was committed and then deleted, because history keeps it", async () => {
-    const dir = repo((d) => writeFileSync(join(d, ".env"), "ANTHROPIC_API_KEY=sk-ant-oops\n"));
+    const dir = repo((d) => writeFileSync(join(d, ".env"), `ANTHROPIC_API_KEY=${fakeKey("oopsleaked")}\n`));
     execFileSync("git", ["rm", "-q", ".env"], { cwd: dir, stdio: "ignore" });
     execFileSync("git", ["commit", "-q", "-m", "remove secret", "--no-verify"], { cwd: dir, stdio: "ignore" });
 
@@ -95,14 +106,14 @@ describe("cua doctor", () => {
   });
 
   it("fails when a key is pasted into a tracked file", async () => {
-    const dir = repo((d) => writeFileSync(join(d, "config.ts"), 'export const key = "sk-ant-api03-pastedintosource";\n'));
+    const dir = repo((d) => writeFileSync(join(d, "config.ts"), `export const key = "${fakeKey("api03pastedintosource")}";\n`));
     const r = await run(dir);
     expect(find(r, "no API key in tracked files")?.level).toBe("fail");
     expect(find(r, "no API key in tracked files")?.detail).toContain("config.ts");
   });
 
   it("fails when .env.example carries a credential, but not for the mock app's synthetic login", async () => {
-    const withKey = repo((d) => writeFileSync(join(d, ".env.example"), "ANTHROPIC_API_KEY=sk-ant-inthetemplate\n"));
+    const withKey = repo((d) => writeFileSync(join(d, ".env.example"), `ANTHROPIC_API_KEY=${fakeKey("inthetemplate")}\n`));
     expect(find(await run(withKey), ".env.example carries no key")?.level).toBe("fail");
 
     const synthetic = repo((d) => writeFileSync(join(d, ".env.example"), "ANTHROPIC_API_KEY=\nTARGET_USER=demo\nTARGET_PASSWORD=demo\n"));
@@ -129,7 +140,7 @@ describe("cua doctor", () => {
   it("never prints the key it checked", async () => {
     const dir = repo((d) => writeFileSync(join(d, ".gitignore"), ".env\n"));
     const prev = process.env["ANTHROPIC_API_KEY"];
-    process.env["ANTHROPIC_API_KEY"] = "sk-ant-supersecretvalue";
+    process.env["ANTHROPIC_API_KEY"] = fakeKey("supersecretvalue");
     try {
       const r = await run(dir);
       expect(JSON.stringify(r)).not.toContain("supersecretvalue");
