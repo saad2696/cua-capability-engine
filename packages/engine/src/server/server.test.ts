@@ -6,7 +6,7 @@
  * stopped at, the browser is never restarted, and the value the flow finally extracts is the one a
  * human's own clicks made reachable.
  */
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import type { Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -28,8 +28,20 @@ beforeAll(async () => {
   await new Promise<void>((r) => target.once("listening", r));
   base = `http://localhost:${(target.address() as { port: number }).port}`;
   evidenceRoot = mkdtempSync(join(tmpdir(), "cua-server-"));
+  // The server reads its artifact catalogue from the same directory a discovery writes into, so the
+  // tests get a seeded copy: listing still sees the real capabilities, and a run started here
+  // cannot overwrite a committed one. It did exactly that the first time the console learned to
+  // record artifacts.
+  const artifactsCopy = join(evidenceRoot, "artifacts");
+  mkdirSync(artifactsCopy, { recursive: true });
+  const repoArtifacts = new URL("../../../../artifacts/", import.meta.url).pathname;
+  for (const f of readdirSync(repoArtifacts).filter((n) => n.endsWith(".json"))) copyFileSync(join(repoArtifacts, f), join(artifactsCopy, f));
   api = await startServer(0, {
-    evidenceDir: evidenceRoot, secrets: { TARGET_USER: "demo", TARGET_PASSWORD: "demo" }, interventionTimeoutMs: 120_000,
+    evidenceDir: evidenceRoot,
+    // Isolated, or a discovery run started by these tests writes a capability into the repository's
+    // own artifacts/ directory and overwrites a committed deliverable.
+    artifactsDir: artifactsCopy,
+    secrets: { TARGET_USER: "demo", TARGET_PASSWORD: "demo" }, interventionTimeoutMs: 120_000,
     // The scripted provider, so the discovery path is exercised with no API key and no cost.
     provider: () => new FakeProvider(DISCOVERY_SCRIPT),
   });
@@ -286,6 +298,16 @@ describe("discovery runs under the same session control", () => {
     const chunk = await reader.read();
     await reader.cancel();
     expect(new TextDecoder().decode(chunk.value)).toContain("run_started");
+
+    // A discovery that produces no capability has produced nothing. Until this assertion existed,
+    // a run started from the console recorded events and screenshots and then dropped the artifact
+    // on the floor — the console being the surface whose entire purpose is producing one.
+    const record = (await runOf(started.id)) as { discovery?: { artifactPath?: string } };
+    expect(record.discovery?.artifactPath, "the run recorded no artifact").toBeDefined();
+    const written = JSON.parse(readFileSync(record.discovery!.artifactPath!, "utf8")) as { capability: { id: string } };
+    expect(written.capability.id).toBe("member-savings-balance");
+    // ...and into the directory it was given, not the repository's own artifacts/.
+    expect(record.discovery!.artifactPath!.startsWith(evidenceRoot)).toBe(true);
   }, 120_000);
 
   it("reports a missing model provider as a bad request, not a crash", async () => {

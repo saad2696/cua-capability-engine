@@ -56,6 +56,63 @@ Read `events.jsonl` in either for the control trail: `control_change` records ev
 lease id, `resume` records the operator's answer, and `interventions.json` holds the request an
 operator saw, including who claimed it and how they resolved it.
 
+## Goal G2 — the flow that commits something (slice 010)
+
+G1 reads a balance; nothing it does can be wrong in a way that matters. G2 opens a sub-account, and
+these three directories are the same capability at its three interesting settings.
+
+| directory | what happened | result |
+|---|---|---|
+| `discovery-g2-open-subaccount/` | **Real Claude run.** 15 steps, 15 model calls, $0.14. Stopped three times for a human; each approval was given over the console's HTTP API and is recorded in `interventions.json`. Produced `artifacts/member-open-subaccount@1.json`. | `completed` |
+| `replay-g2-committed/` | The same artifact after an operator approved it, replayed with **no model in the loop**. Opened a second account and read back its confirmation number. | `SUCCESS`, `side effects: committed`, 12 steps, 3.9s, exit 0 |
+| `replay-g2-blocked/` | Byte-for-byte the same artifact and parameters, run with `--risky block`. | `FAILURE POLICY_VIOLATION`, `side effects: none`, exit 2 |
+
+The last two are the point. Same capability, same inputs, one policy setting different, and the
+difference is whether an account gets opened at all — the guardrail is a property of the deployment,
+not of the recorded flow.
+
+**Three escalations, and the first one was the model's own idea.** It called
+`assert_state(needs_human_confirmation)` on reaching the review screen, before any rule fired. The
+other two were the policy: clicking `Open Account`, whose label matches the irreversible list, and
+accepting the `confirm()` dialog the application raises — which is the step that actually opens the
+account, and which the engine treats as a separate decision because the operator who approved the
+click had not yet seen the words "This action cannot be undone".
+
+The confirmation numbers differ between runs (`CU-700001` from discovery, `CU-700002` from replay)
+because each run really did open an account in the mock core. That is what `committed` means here,
+and it is the one claim in this repository that could not be made honestly by a fixture.
+
+## Every run directory
+
+The tables above say what each run is *for*. This one is generated from the run files themselves, so
+it cannot drift from what is actually on disk — if a directory is here with no summary, or missing
+from here entirely, that is a real fact about the evidence rather than a stale sentence.
+
+<!-- BEGIN generated run index — `cua evidence index` -->
+
+_16 runs. Regenerate with `pnpm cua evidence index`._
+
+| run | kind | outcome | detail | steps | notes |
+| --- | --- | --- | --- | --- | --- |
+| `discovery-g1-fake-provider/` | discovery | COMPLETED | /tmp/cua-offline-artifacts/member-savings-balance-offline@1.json | 7 | scripted · — |
+| `discovery-g1-savings-balance/` | discovery | COMPLETED | artifacts/member-savings-balance@1.json | 8 | claude-sonnet-5 · $0.0720 |
+| `discovery-g2-open-subaccount/` | discovery | COMPLETED | artifacts/member-open-subaccount@1.json | 15 | claude-sonnet-5 · $0.1447 |
+| `handover-g1-approve-and-resume/` | handover | SUCCESS | {"savingsBalance":{"amount":1234.56,"currency":"USD"}} | 7 | 1 intervention: RISKY_STEP_NEEDS_APPROVAL→resolved |
+| `handover-g1-scenario-injected/` | handover | SUCCESS | {"savingsBalance":{"amount":1234.56,"currency":"USD"}} | 12 | 2 interventions: RISKY_STEP_NEEDS_APPROVAL→resolved, RISKY_STEP_NEEDS_APPROVAL→resolved |
+| `observe-legacy-cu-core-login/` | observation | CAPTURED | http://localhost:4100/ | 4 elements | — |
+| `replay-g1-escalated/` | replay | ESCALATED REPLAY_FAILURE | RECOVERY_LOOP: at most 1 recovery(ies) for SESSION_EXPIRED — SESSION_EXPIRED triggered 2 times at this step | 6 | side effects: none |
+| `replay-g1-maintenance-dialog/` | replay | SUCCESS | {"savingsBalance":{"amount":1234.56,"currency":"USD"}} | 7 | side effects: none |
+| `replay-g1-member-not-found/` | replay | BUSINESS_OUTCOME MEMBER_NOT_FOUND | {} · No member exists with this member ID. | 5 | side effects: none |
+| `replay-g1-other-member/` | replay | SUCCESS | {"savingsBalance":{"amount":8900.04,"currency":"USD"}} | 7 | side effects: none |
+| `replay-g1-recovery-loop/` | replay | FAILURE RECOVERY_LOOP | — | 6 | side effects: none |
+| `replay-g1-server-error/` | replay | SUCCESS | {"savingsBalance":{"amount":1234.56,"currency":"USD"}} | 7 | side effects: none |
+| `replay-g1-session-expired/` | replay | SUCCESS | {"savingsBalance":{"amount":1234.56,"currency":"USD"}} | 10 | side effects: none |
+| `replay-g1-success/` | replay | SUCCESS | {"savingsBalance":{"amount":1234.56,"currency":"USD"}} | 7 | side effects: none |
+| `replay-g2-blocked/` | replay | FAILURE POLICY_VIOLATION | — | 10 | side effects: none |
+| `replay-g2-committed/` | replay | SUCCESS | {"confirmationNumber":"CU-700002"} | 12 | side effects: committed |
+
+<!-- END generated run index -->
+
 ## What is and is not redacted
 
 No parameter or secret value appears in any **structured** file in this directory — `events.jsonl`,

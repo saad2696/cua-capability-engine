@@ -57,7 +57,7 @@ const publicRun = (r: RunRecord) => ({
 export function createServerApp(opts: ServerOptions = {}): { app: Express; registry: RunRegistry } {
   const evidenceRoot = opts.evidenceDir ?? "evidence";
   const artifactsDir = opts.artifactsDir ?? "artifacts";
-  const registry = new RunRegistry(evidenceRoot, opts.policyPath);
+  const registry = new RunRegistry(evidenceRoot, opts.policyPath, artifactsDir);
   const app = express();
   app.use(express.json({ limit: "2mb" }));
 

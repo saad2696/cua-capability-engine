@@ -287,6 +287,57 @@ the live application, records an artifact, and replays that artifact **with no m
 it opens a second real account and returns a different confirmation number. The claim is made by the
 system, not by a test author.
 
+### What the real run did that the scripted one could not
+
+The G2 flow is exercised twice: by a scripted provider in the test suite, and once for real by
+Claude Sonnet 5 through the console's own HTTP API — 15 steps, 15 model calls, $0.14, recorded in
+`evidence/discovery-g2-open-subaccount/`.
+
+The scripted run proves the mechanism. The real one produced something the script could not have,
+because the script only ever does what it was told: **the model stopped and asked for a human
+before any rule fired.** On reaching the review screen it called
+`assert_state(needs_human_confirmation)` of its own accord, summarising what was about to happen —
+member, nickname, deposit, funding account. The two escalations that followed were the policy's:
+clicking `Open Account`, and accepting the dialog. Three interventions, one of them the model's own
+judgement, all three recorded in `interventions.json` with who approved them.
+
+That asymmetry is the argument for recording discovery rather than trusting it live. The model's
+caution is a nice property and not one to depend on; the artifact it produced carries `risk: risky`
+and `pointOfNoReturn: true` on the two steps that matter, which is a property you *can* depend on,
+because it is checked at replay by code that has no model in it.
+
+**The three settings of one capability.** The same artifact, the same parameters:
+
+| run | setting | result |
+|---|---|---|
+| `replay-g2-committed/` | approved artifact, default policy | `SUCCESS`, `side effects: committed`, 12 steps, 3.9s, exit 0 |
+| `replay-g2-blocked/` | `--risky block` | `FAILURE POLICY_VIOLATION`, `side effects: none`, exit 2 |
+| discovery | `discovery.onRisky: escalate` | three interventions, then completion |
+
+One policy setting is the difference between opening an account and refusing to. The guardrail is a
+property of the deployment, not of the recorded flow — which is the whole reason policy is a file
+and not a constant.
+
+The confirmation numbers differ between the runs (`CU-700001`, then `CU-700002`) because each run
+really opened an account in the mock core. `committed` is now a claim the system makes about its own
+behaviour rather than a value a fixture was written to contain.
+
+### The console produced no capability
+
+Starting a discovery from the operator console recorded events, screenshots and a session, and then
+threw the result away: `RunRegistry` never called the recorder. The console is the surface whose
+entire purpose is turning a goal into a capability, and it was the one surface that could not.
+
+The cause is ordinary — the recording sequence lived inside `cua discover`, so anything that was not
+the CLI silently lacked it. `finishDiscovery()` now owns writing `usage.json`, the artifact,
+`artifact.json` and `run.json`, and both entry points call it. The server test asserts that a run
+started over HTTP leaves an artifact behind and that it lands in the directory the server was given.
+
+That second half was also a defect, found by writing the assertion: with the recorder wired in, the
+test suite began writing capabilities into the repository's own `artifacts/` directory and
+overwrote a committed deliverable on its first run. Tests now get their own artifacts directory.
+It is the second time in this project that a test has quietly modified the fixtures it was reading.
+
 ### Two things the tests found that review did not
 
 Writing a test for a branch the happy path cannot reach is how both of these surfaced, and both are

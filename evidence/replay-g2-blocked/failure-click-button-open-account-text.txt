@@ -1,0 +1,15 @@
+Legacy CU Core
+Member Search
+Loans
+Reports
+Sign Out
+Legacy CU Core — Confirm New Sub-Account Operator: [redacted:TARGET_USER]
+Review and Confirm
+Member Alex Sample ([redacted:param:memberId])
+Account Type Savings
+Nickname Holiday
+Initial Deposit $50.00
+Funding Source [redacted:param:memberId]-01
+Opening a sub-account posts a transfer from the funding source. This cannot be undone from this screen.
+   Back
+Legacy CU Core v4.2.1 · For internal use only · Synthetic [redacted:TARGET_USER] data

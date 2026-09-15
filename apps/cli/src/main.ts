@@ -10,6 +10,7 @@ import { discoverCommand } from "./commands/discover.js";
 import { replayCommand } from "./commands/replay.js";
 import { serveCommand } from "./commands/serve.js";
 import { doctorCommand } from "./commands/doctor.js";
+import { evidenceCommand } from "./commands/evidence.js";
 
 const [command = "help", ...rest] = process.argv.slice(2);
 
@@ -28,6 +29,7 @@ Commands:
   replay      <artifact.json> [--param k=v] [--plan] [--allow-draft] [--fault <name>[:sticky]] [--headed]
   serve       [--port 4200] [--headed]   control plane for the operator console (loopback only)
   doctor      [--json] [--skip-network]  check secrets, policy and target before a run
+  evidence    index [--dir evidence] [--check]   regenerate the run table in evidence/README.md
 
 Run \`cua doctor\` first: it verifies that no secret is tracked by git and that policy.yaml is valid.`);
 }
@@ -40,7 +42,10 @@ Run \`cua doctor\` first: it verifies that no secret is tracked by git and that 
  */
 try {
   switch (command) {
-    case "doctor":
+    case "evidence":
+    evidenceCommand(rest);
+    break;
+  case "doctor":
       await doctorCommand(rest);
       break;
     case "serve":

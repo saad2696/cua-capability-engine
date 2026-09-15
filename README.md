@@ -27,7 +27,7 @@ Slice-by-slice build. See [openspec/ROADMAP.md](./openspec/ROADMAP.md) for what 
 | 007 | Session control and escalation | done |
 | 008 | Operator console | done |
 | 009 | Policy guardrails | done |
-| 010 | Evidence, README, REPORT | planned |
+| 010 | Evidence, README, REPORT | in progress |
 
 ## Quick start
 
@@ -132,6 +132,40 @@ pnpm cua replay artifacts/member-savings-balance@2.json --param memberId=10077 -
 # 5. the control plane: runs, live events, interventions, take-control
 pnpm cua serve
 ```
+
+### Goal G2 — the flow that actually commits something
+
+G1 reads a balance, so nothing it does can be wrong in a way that matters. G2 opens a sub-account.
+The application's point of no return is a native `confirm()` dialog, and the engine stops for a
+human twice on the way to it: once for the button whose label matches the irreversible list, and
+again for the dialog itself, which is the step that really opens the account.
+
+```bash
+pnpm dev:target                       # terminal 1
+pnpm cua serve                        # terminal 2
+node scripts/demo-g2.mjs              # terminal 3 — plays the operator over the console's own API
+#    -> 3 interventions, each approved by "operator-1"
+#    -> artifacts/member-open-subaccount@1.json, evidence/discovery-g2-open-subaccount/
+```
+
+Then approve it once and run it unattended — this is the production shape, where the human decision
+is made at review time rather than on every run:
+
+```bash
+curl -X POST http://127.0.0.1:4200/api/artifacts/member-open-subaccount@1.json/approve \
+  -H 'content-type: application/json' -d '{"by":"operator-1"}'
+
+pnpm cua replay artifacts/member-open-subaccount@1.json --param memberId=10042
+#    -> SUCCESS  outputs: {"confirmationNumber":"CU-700002"}  (12 steps, side effects: committed)
+
+# the same artifact and parameters, one policy setting different
+pnpm cua replay artifacts/member-open-subaccount@1.json --param memberId=10042 --risky block
+#    -> FAILURE POLICY_VIOLATION  (side effects: none, exit 2)
+```
+
+The confirmation number changes every run because each run really opens an account in the mock core.
+That is what `side effects: committed` means, and the pair above is the whole safety argument in two
+commands: the guardrail is a property of the deployment, not of the recorded flow.
 
 ## The operator console
 

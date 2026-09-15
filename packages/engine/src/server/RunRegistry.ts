@@ -13,6 +13,7 @@ import { runDiscovery } from "../agent/loop.js";
 import { EvidenceWriter } from "../evidence/EvidenceWriter.js";
 import { Redactor } from "../evidence/redactor.js";
 import { runPolicy } from "../policy/load.js";
+import { finishDiscovery } from "../recorder/finish.js";
 import { replay } from "../replay/executor.js";
 import { Session } from "../session/Session.js";
 import { PlaywrightSurface } from "../surface/playwright/PlaywrightSurface.js";
@@ -39,7 +40,7 @@ export interface RunRecord {
   finishedAt?: string;
   result?: ReplayResult;
   /** Discovery runs report a different shape; the console renders whichever is present. */
-  discovery?: DiscoveryResult | { status: string; stepsTaken: number; artifactPath?: string };
+  discovery?: DiscoveryResult | { status: string; stepsTaken: number; artifactPath?: string; warnings?: string[] };
   evidenceDir: string;
   /** The run's evidence writer: the server subscribes to it to stream events live. */
   evidence: EvidenceWriter;
@@ -83,6 +84,8 @@ export interface StartDiscoveryInput {
   maxSteps?: number;
   headless?: boolean;
   interventionTimeoutMs?: number;
+  /** Vendor whose default outcome catalog the recorded artifact inherits. */
+  vendor?: string;
 }
 
 const RECENT_CAP = 200;
@@ -99,6 +102,8 @@ export class RunRegistry {
   constructor(
     private readonly evidenceRoot: string,
     private readonly policyPath?: string,
+    /** Where a discovery started here writes its capability. */
+    private readonly artifactsDir?: string,
   ) {}
 
   list(): RunRecord[] {
@@ -294,7 +299,19 @@ export class RunRegistry {
           maxSteps: input.maxSteps ?? doc.maxSteps,
           approveRisky: async (decision) => session.requestApproval(`${decision.tool}: ${JSON.stringify(decision.args).slice(0, 200)}`),
         });
-        record.discovery = { status: trace.status, stepsTaken: trace.steps.length };
+        // The console's whole purpose is producing a capability, so a discovery started here
+        // records one exactly as `cua discover` does — same function, same artifact, same evidence.
+        const fin = finishDiscovery({
+          runId, trace, secrets, evidence, capabilityId: input.capabilityId,
+          ...(input.goal ? { name: input.goal } : {}),
+          vendor: input.vendor ?? "legacy-cu-core", origin, provider: input.provider.name, model: input.provider.model,
+          ...(this.artifactsDir ? { outDir: this.artifactsDir } : {}),
+        });
+        record.discovery = {
+          status: fin.result.status, stepsTaken: trace.steps.length,
+          ...(fin.artifactPath ? { artifactPath: fin.artifactPath } : {}),
+          ...(fin.warnings.length ? { warnings: fin.warnings } : {}),
+        };
       } catch (e) {
         evidence.event({ type: "error", code: "SURFACE_ERROR", message: (e as Error).message });
       } finally {

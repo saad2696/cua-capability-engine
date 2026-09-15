@@ -7,14 +7,12 @@
  * Runs the LLM-driven discovery loop against the live surface, records the successful run as
  * a capability artifact, and writes evidence for the run.
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
 import { parseArgs } from "node:util";
 import {
-  AnthropicProvider, EvidenceWriter, FakeProvider, PlaywrightSurface, PolicyEnforcedSurface, runPolicy, Redactor, estimateCostUsd, newRunId,
-  recordCapability, runDiscovery, type LlmProvider, type ScriptStep,
+  AnthropicProvider, EvidenceWriter, FakeProvider, PlaywrightSurface, PolicyEnforcedSurface, runPolicy, Redactor, newRunId,
+  finishDiscovery, runDiscovery, type LlmProvider, type ScriptStep,
 } from "@cua/engine";
-import { artifactFileName, DiscoveryResultSchema, summarizeCapability, type Outcome } from "@cua/schema";
+
 
 const SECRET_ENV = ["TARGET_USER", "TARGET_PASSWORD"];
 
@@ -83,40 +81,18 @@ export async function discoverCommand(argv: string[]): Promise<void> {
     });
     evidence.json("trace.json", { ...trace, steps: trace.steps.map((s) => ({ ...s, before: { ...s.before, text: undefined }, after: s.after ? { ...s.after, text: undefined } : undefined })) });
 
-    const usage = { provider: provider.name, model: provider.model, calls: trace.usage.calls, inputTokens: trace.usage.inputTokens, outputTokens: trace.usage.outputTokens, ...(estimateCostUsd(provider.model, trace.usage.inputTokens, trace.usage.outputTokens) !== undefined ? { estimatedCostUsd: estimateCostUsd(provider.model, trace.usage.inputTokens, trace.usage.outputTokens)! } : {}) };
-    evidence.json("usage.json", usage, false);
-
-    let artifactPath: string | undefined;
-    let prunedSteps = 0;
-    let status: "completed" | "needsReview" | "escalated" | "gave_up" | "failed" = trace.status;
-    if (trace.status === "completed") {
-      const defaultsPath = join("artifacts", "defaults", `${values.vendor}.outcomes.json`);
-      const defaultOutcomes = existsSync(defaultsPath) ? (JSON.parse(readFileSync(defaultsPath, "utf8")) as Outcome[]) : [];
-      const rec = recordCapability(trace, secrets, {
-        capabilityId, name: values.name ?? goal, vendor: values.vendor, allowedOrigins: [origin], defaultOutcomes,
-        provider: provider.name, model: provider.model,
-      });
-      rec.capability.capability.summary = summarizeCapability(rec.capability);
-      if (rec.warnings.length) {
-        rec.capability.capability.status = "needsReview";
-        status = "needsReview";
-      }
-      prunedSteps = rec.prunedStepIds.length;
-      if (rec.prunedStepIds.length) evidence.event({ type: "pruned", removedStepIds: rec.prunedStepIds, reason: "detour or no-op" });
-      mkdirSync(values.out, { recursive: true });
-      artifactPath = join(values.out, artifactFileName(rec.capability));
-      writeFileSync(artifactPath, JSON.stringify(rec.capability, null, 2) + "\n");
-      evidence.json("artifact.json", rec.capability, false);
-      for (const w of rec.warnings) console.warn(`  warning: ${w}`);
-      console.log(`  artifact: ${artifactPath} (${rec.capability.capability.status}; ${rec.capability.steps.length} steps, ${Object.keys(rec.capability.preludes).length} prelude(s), ${rec.prunedStepIds.length} pruned)`);
-      for (const line of rec.capability.capability.summary) console.log(`    ${line}`);
-    }
-    const result = DiscoveryResultSchema.parse({
-      runId, status, goal, params: Object.fromEntries(Object.keys(params).map((k) => [k, { kind: "param", name: k }])),
-      ...(artifactPath ? { artifactPath } : {}), stepsTaken: trace.steps.length, prunedSteps, usage,
-      ...(trace.reason ? { reason: trace.reason } : {}), evidenceDir: evidence.dir, startedAt: trace.startedAt, finishedAt: trace.finishedAt,
+    const fin = finishDiscovery({
+      runId, trace, secrets, evidence, capabilityId, ...(values.name ? { name: values.name } : {}),
+      vendor: values.vendor, origin, provider: provider.name, model: provider.model, outDir: values.out,
     });
-    evidence.json("run.json", result);
+    const { result, warnings, artifactPath } = fin;
+    const status = result.status;
+    for (const w of warnings) console.warn(`  warning: ${w}`);
+    if (fin.capability && artifactPath) {
+      console.log(`  artifact: ${artifactPath} (${fin.capability.capability.status}; ${fin.capability.steps.length} steps, ${Object.keys(fin.capability.preludes).length} prelude(s), ${fin.prunedStepIds.length} pruned)`);
+      for (const line of fin.capability.capability.summary) console.log(`    ${line}`);
+    }
+    const usage = result.usage;
     console.log(`  ${status}${trace.reason ? ` (${trace.reason})` : ""} in ${Math.round((Date.now() - started) / 1000)}s; ${usage.calls} model calls, ${usage.inputTokens} in / ${usage.outputTokens} out tokens${usage.estimatedCostUsd !== undefined ? ` (~$${usage.estimatedCostUsd.toFixed(3)})` : ""}`);
     process.exitCode = status === "completed" || status === "needsReview" ? 0 : status === "escalated" ? 3 : 2;
   } finally {

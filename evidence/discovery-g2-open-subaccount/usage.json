@@ -1,0 +1,8 @@
+{
+  "provider": "anthropic",
+  "model": "claude-sonnet-5",
+  "calls": 15,
+  "inputTokens": 62656,
+  "outputTokens": 1939,
+  "estimatedCostUsd": 0.144702
+}

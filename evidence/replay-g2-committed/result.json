@@ -1,0 +1,17 @@
+{
+  "status": "success",
+  "outputs": {
+    "confirmationNumber": "CU-700002"
+  },
+  "runId": "replay-2026-09-15090-d076e0",
+  "capabilityId": "member-open-subaccount",
+  "capabilityVersion": 1,
+  "startedAt": "2026-09-15T09:09:42.476Z",
+  "finishedAt": "2026-09-15T09:09:46.373Z",
+  "durationMs": 3897,
+  "stepsRun": 12,
+  "sideEffects": "committed",
+  "drift": [],
+  "recoveries": [],
+  "evidenceDir": "evidence/replay-g2-committed"
+}

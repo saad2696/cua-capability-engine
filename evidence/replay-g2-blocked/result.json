@@ -1,0 +1,25 @@
+{
+  "status": "failure",
+  "code": "POLICY_VIOLATION",
+  "atStep": "step:click-button-open-account",
+  "expected": "no risky steps (policy: block)",
+  "observed": "step:click-button-open-account is risky",
+  "evidence": {
+    "screenshot": "screenshots/012-failure-click-button-open-account-viewport.png",
+    "fullPage": "screenshots/011-failure-click-button-open-account-fullpage.png",
+    "a11y": "failure-click-button-open-account-a11y.json",
+    "text": "failure-click-button-open-account-text.txt",
+    "narrative": "failure-click-button-open-account.md"
+  },
+  "runId": "replay-2026-09-15090-9389ac",
+  "capabilityId": "member-open-subaccount",
+  "capabilityVersion": 1,
+  "startedAt": "2026-09-15T09:09:55.743Z",
+  "finishedAt": "2026-09-15T09:09:58.995Z",
+  "durationMs": 3252,
+  "stepsRun": 10,
+  "sideEffects": "none",
+  "drift": [],
+  "recoveries": [],
+  "evidenceDir": "evidence/replay-g2-blocked"
+}

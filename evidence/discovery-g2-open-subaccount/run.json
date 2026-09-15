@@ -1,0 +1,25 @@
+{
+  "runId": "run-2026-09-15-2a08ed",
+  "status": "completed",
+  "goal": "Open a new savings sub-account for member {memberId} with nickname \"Holiday\" and an initial deposit of $50.00, funded from the checking account, and read the confirmation number shown when it is done.",
+  "params": {
+    "memberId": {
+      "kind": "param",
+      "name": "memberId"
+    }
+  },
+  "artifactPath": "artifacts/member-open-subaccount@1.json",
+  "stepsTaken": 15,
+  "prunedSteps": 0,
+  "usage": {
+    "provider": "anthropic",
+    "model": "claude-sonnet-5",
+    "calls": 15,
+    "inputTokens": 62656,
+    "outputTokens": 1939,
+    "estimatedCostUsd": 0.144702
+  },
+  "evidenceDir": "evidence/discovery-g2-open-subaccount",
+  "startedAt": "2026-09-15T09:07:57.232Z",
+  "finishedAt": "2026-09-15T09:08:45.217Z"
+}

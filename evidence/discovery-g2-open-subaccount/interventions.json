@@ -1,0 +1,374 @@
+[
+  {
+    "id": "intervention-f40d90b2",
+    "runId": "run-2026-09-15-2a08ed",
+    "kind": "risky_step",
+    "reason": "RISKY_STEP_NEEDS_APPROVAL",
+    "capabilityId": "member-open-subaccount",
+    "goal": "Open a new savings sub-account for member {memberId} with nickname \"Holiday\" and an initial deposit of $50.00, funded from the checking account, and read the confirmation number shown when it is done.",
+    "stepIndex": -1,
+    "detail": "assert_state: {\"kind\":\"needs_human_confirmation\",\"detail\":\"Confirmation screen shows opening a Savings sub-account for Alex Sample ([redacted:param:memberId]), nickname \\\"Holiday\\\", initial deposit $50.00, funded from account [redacted:param:memberId]-01",
+    "screenshot": "screenshots/020-intervention-run.png",
+    "url": "http://localhost:4100/",
+    "elements": [
+      {
+        "index": 0,
+        "role": "link",
+        "name": "Member Search",
+        "bbox": [
+          13,
+          37,
+          94,
+          15
+        ],
+        "frame": [
+          "nav"
+        ],
+        "enabled": true,
+        "focused": false
+      },
+      {
+        "index": 1,
+        "role": "link",
+        "name": "Loans",
+        "bbox": [
+          13,
+          58,
+          35,
+          15
+        ],
+        "frame": [
+          "nav"
+        ],
+        "enabled": true,
+        "focused": false
+      },
+      {
+        "index": 2,
+        "role": "link",
+        "name": "Reports",
+        "bbox": [
+          13,
+          79,
+          46,
+          15
+        ],
+        "frame": [
+          "nav"
+        ],
+        "enabled": true,
+        "focused": false
+      },
+      {
+        "index": 3,
+        "role": "link",
+        "name": "Sign Out",
+        "bbox": [
+          13,
+          100,
+          53,
+          15
+        ],
+        "frame": [
+          "nav"
+        ],
+        "enabled": true,
+        "focused": false
+      },
+      {
+        "index": 4,
+        "role": "link",
+        "name": "Back",
+        "bbox": [
+          662,
+          220,
+          29,
+          15
+        ],
+        "frame": [
+          "main"
+        ],
+        "enabled": true,
+        "focused": false
+      },
+      {
+        "index": 5,
+        "role": "button",
+        "name": "Open Account",
+        "bbox": [
+          566,
+          221,
+          75,
+          14
+        ],
+        "frame": [
+          "main"
+        ],
+        "enabled": true,
+        "focused": false
+      }
+    ],
+    "suggestedActions": [
+      "same",
+      "next",
+      "abort"
+    ],
+    "createdAt": "2026-09-15T09:08:26.528Z",
+    "status": "resolved",
+    "claimedBy": "operator-1",
+    "claimedAt": "2026-09-15T09:08:26.795Z",
+    "resolvedAt": "2026-09-15T09:08:26.798Z",
+    "resolution": {
+      "resumeAt": "same",
+      "by": "operator-1"
+    }
+  },
+  {
+    "id": "intervention-3850911b",
+    "runId": "run-2026-09-15-2a08ed",
+    "kind": "risky_step",
+    "reason": "RISKY_STEP_NEEDS_APPROVAL",
+    "capabilityId": "member-open-subaccount",
+    "goal": "Open a new savings sub-account for member {memberId} with nickname \"Holiday\" and an initial deposit of $50.00, funded from the checking account, and read the confirmation number shown when it is done.",
+    "stepIndex": -1,
+    "detail": "click: {\"index\":5}",
+    "screenshot": "screenshots/022-intervention-run.png",
+    "url": "http://localhost:4100/",
+    "elements": [
+      {
+        "index": 0,
+        "role": "link",
+        "name": "Member Search",
+        "bbox": [
+          13,
+          37,
+          94,
+          15
+        ],
+        "frame": [
+          "nav"
+        ],
+        "enabled": true,
+        "focused": false
+      },
+      {
+        "index": 1,
+        "role": "link",
+        "name": "Loans",
+        "bbox": [
+          13,
+          58,
+          35,
+          15
+        ],
+        "frame": [
+          "nav"
+        ],
+        "enabled": true,
+        "focused": false
+      },
+      {
+        "index": 2,
+        "role": "link",
+        "name": "Reports",
+        "bbox": [
+          13,
+          79,
+          46,
+          15
+        ],
+        "frame": [
+          "nav"
+        ],
+        "enabled": true,
+        "focused": false
+      },
+      {
+        "index": 3,
+        "role": "link",
+        "name": "Sign Out",
+        "bbox": [
+          13,
+          100,
+          53,
+          15
+        ],
+        "frame": [
+          "nav"
+        ],
+        "enabled": true,
+        "focused": false
+      },
+      {
+        "index": 4,
+        "role": "link",
+        "name": "Back",
+        "bbox": [
+          662,
+          220,
+          29,
+          15
+        ],
+        "frame": [
+          "main"
+        ],
+        "enabled": true,
+        "focused": false
+      },
+      {
+        "index": 5,
+        "role": "button",
+        "name": "Open Account",
+        "bbox": [
+          566,
+          221,
+          75,
+          14
+        ],
+        "frame": [
+          "main"
+        ],
+        "enabled": true,
+        "focused": false
+      }
+    ],
+    "suggestedActions": [
+      "same",
+      "next",
+      "abort"
+    ],
+    "createdAt": "2026-09-15T09:08:28.695Z",
+    "status": "resolved",
+    "claimedBy": "operator-1",
+    "claimedAt": "2026-09-15T09:08:28.929Z",
+    "resolvedAt": "2026-09-15T09:08:28.931Z",
+    "resolution": {
+      "resumeAt": "same",
+      "by": "operator-1"
+    }
+  },
+  {
+    "id": "intervention-594bc206",
+    "runId": "run-2026-09-15-2a08ed",
+    "kind": "risky_step",
+    "reason": "RISKY_STEP_NEEDS_APPROVAL",
+    "capabilityId": "member-open-subaccount",
+    "goal": "Open a new savings sub-account for member {memberId} with nickname \"Holiday\" and an initial deposit of $50.00, funded from the checking account, and read the confirmation number shown when it is done.",
+    "stepIndex": -1,
+    "detail": "dismiss_dialog: {\"accept\":true}",
+    "screenshot": "screenshots/025-intervention-run.png",
+    "url": "http://localhost:4100/",
+    "elements": [
+      {
+        "index": 0,
+        "role": "link",
+        "name": "Member Search",
+        "bbox": [
+          13,
+          37,
+          94,
+          15
+        ],
+        "frame": [
+          "nav"
+        ],
+        "enabled": true,
+        "focused": false
+      },
+      {
+        "index": 1,
+        "role": "link",
+        "name": "Loans",
+        "bbox": [
+          13,
+          58,
+          35,
+          15
+        ],
+        "frame": [
+          "nav"
+        ],
+        "enabled": true,
+        "focused": false
+      },
+      {
+        "index": 2,
+        "role": "link",
+        "name": "Reports",
+        "bbox": [
+          13,
+          79,
+          46,
+          15
+        ],
+        "frame": [
+          "nav"
+        ],
+        "enabled": true,
+        "focused": false
+      },
+      {
+        "index": 3,
+        "role": "link",
+        "name": "Sign Out",
+        "bbox": [
+          13,
+          100,
+          53,
+          15
+        ],
+        "frame": [
+          "nav"
+        ],
+        "enabled": true,
+        "focused": false
+      },
+      {
+        "index": 4,
+        "role": "link",
+        "name": "Back",
+        "bbox": [
+          662,
+          220,
+          29,
+          15
+        ],
+        "frame": [
+          "main"
+        ],
+        "enabled": true,
+        "focused": false
+      },
+      {
+        "index": 5,
+        "role": "button",
+        "name": "Open Account",
+        "bbox": [
+          566,
+          221,
+          75,
+          14
+        ],
+        "frame": [
+          "main"
+        ],
+        "enabled": true,
+        "focused": false
+      }
+    ],
+    "suggestedActions": [
+      "same",
+      "next",
+      "abort"
+    ],
+    "createdAt": "2026-09-15T09:08:31.926Z",
+    "status": "resolved",
+    "claimedBy": "operator-1",
+    "claimedAt": "2026-09-15T09:08:31.987Z",
+    "resolvedAt": "2026-09-15T09:08:31.989Z",
+    "resolution": {
+      "resumeAt": "same",
+      "by": "operator-1"
+    }
+  }
+]
