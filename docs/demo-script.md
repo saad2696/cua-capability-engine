@@ -28,8 +28,10 @@ json.dump(c,open(p,"w"),indent=2); open(p,"a").write("\n")
 PY
 
 # 2. G2's artifact is currently APPROVED, which is what Act 6 wants. Leave it.
-#    Each G2 replay opens a real account, so the confirmation number increments every rehearsal
-#    (CU-700003, -4, …). That is not a bug — say so on camera, it is the proof.
+#    Each G2 replay opens a real account, so the confirmation number climbs within a session
+#    (CU-700001, -2, …). Restarting the target app resets it, and `pnpm demo` restarts it — so
+#    every rehearsal starts from CU-700001 as long as you restart the stack. Say on camera that
+#    the number moves: that is the proof the run really committed something.
 ```
 
 **Terminal:** one window, large font, ~100 columns. Close anything with a personal name in it. The
