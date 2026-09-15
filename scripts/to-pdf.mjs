@@ -52,6 +52,7 @@ try {
   const figures = await page.locator(".mermaid").count();
   if (figures) {
     const drawn = await page
+      // eslint-disable-next-line no-undef -- this closure is serialised and evaluated in the page
       .waitForFunction((n) => document.querySelectorAll(".mermaid svg").length >= n, figures, { timeout: 30_000 })
       .then(() => true)
       .catch(() => false);

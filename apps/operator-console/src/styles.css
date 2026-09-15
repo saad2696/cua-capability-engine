@@ -54,7 +54,7 @@ a:hover { text-decoration: underline; }
 .banner--warn { background: #3a3320; color: var(--warn); }
 
 /* ---- controls ---- */
-button, select, input { font: inherit; color: inherit; }
+button, select, input, textarea { font: inherit; color: inherit; }
 button { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 0.4rem 0.8rem; cursor: pointer; }
 button:hover:not(:disabled) { border-color: var(--muted); }
 button:disabled { opacity: 0.4; cursor: not-allowed; }
@@ -63,7 +63,8 @@ button.danger { color: var(--bad); }
 button.big { padding: 0.6rem 1.4rem; font-size: 1rem; }
 button.link { background: none; border: none; padding: 0.1rem 0.2rem; color: var(--accent); }
 button.link--on { color: var(--text); font-weight: 600; }
-select, input { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 0.4rem 0.6rem; }
+select, input, textarea { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 0.4rem 0.6rem; }
+textarea { width: 100%; resize: vertical; line-height: 1.45; }
 label { display: flex; flex-direction: column; gap: 0.25rem; margin-bottom: 0.8rem; }
 label small { margin-top: 0.1rem; }
 fieldset { border: 1px solid var(--line); border-radius: 8px; padding: 0.8rem; margin: 0 0 0.9rem; }

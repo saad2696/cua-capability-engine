@@ -336,11 +336,8 @@ stopped at, in the session it paused in. The cookies and frames are the ones my 
 behind."</p></blockquote>
 
 <h3>Act 6 · Teaching it something new, live <span class="note">(2 min)</span></h3>
-<div class="do"><pre><code>pnpm cua discover \
-  --goal "Look up member {memberId} and report which branch they belong to and the date they have been a member since." \
-  --url http://localhost:4100/ --capability-id member-branch-and-tenure --param memberId=10042 \
-  --name "Member branch and tenure"</code></pre></div>
-<p>Rehearsed: <strong>25s, 8 calls, ~$0.074</strong> → 4 steps, login prelude, <strong>two</strong>
+<div class="do">Console → <strong>Start</strong> → <em>Discover with a model</em> → Goal: <strong>“Something else — describe it yourself”</strong>. Type the goal, name it <code>member-branch-and-tenure</code>, pick <strong>Claude</strong>, set <code>memberId=10042</code>, press Discover.</div>
+<p>The <code>{memberId}</code> you type becomes a parameter on its own, and the <em>Artifact taking shape</em> panel writes the recipe as the model works. Rehearsed: <strong>25s, 8 calls, ~$0.074</strong> → 4 steps, login prelude, <strong>two</strong>
 outputs. Replays in 2.2s; <code>memberId=10077</code> returns Riverside / 2018-09-30.</p>
 <p class="note"><strong>This goal was run once to verify, then deleted — the artifact and its
 evidence are not in the repository and were never committed.</strong> So the run on camera is

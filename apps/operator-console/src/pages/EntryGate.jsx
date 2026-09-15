@@ -3,6 +3,11 @@
  *
  * Two deliberate constraints, both of which are the point rather than a limitation.
  *
+ * The goal box takes free text as well as the demo's two prepared goals. An operator whose console
+ * can only run capabilities somebody already thought of is a viewer, not an operator — and the API
+ * has always accepted an arbitrary goal, so restricting it here was a gap in the UI rather than a
+ * policy. Parameters are read out of the `{placeholders}` in whatever you type.
+ *
  * Discovery takes any URL, because discovery is how a capability learns which application it
  * belongs to. Replay does not: a capability artifact carries the origins it was recorded against,
  * and pre-flight refuses anything else. So for replay the gate offers those origins instead of a
@@ -17,6 +22,8 @@ export default function EntryGate({ demo, onError }) {
   const [mode, setMode] = useState("replay");
   const [url, setUrl] = useState("");
   const [goalKey, setGoalKey] = useState("G1");
+  const [customGoal, setCustomGoal] = useState("");
+  const [customId, setCustomId] = useState("");
   const [file, setFile] = useState("");
   const [params, setParams] = useState({});
   const [provider, setProvider] = useState("fake");
@@ -25,7 +32,14 @@ export default function EntryGate({ demo, onError }) {
   const [pace, setPace] = useState(0);
   const [busy, setBusy] = useState(false);
 
-  const goal = demo?.goals.find((g) => g.key === goalKey);
+  const isCustom = goalKey === "__custom";
+  const preset = demo?.goals.find((g) => g.key === goalKey);
+  /** `{memberId}` in the goal text is what makes a capability reusable, so the gate reads the
+   *  parameter list straight out of it rather than asking for it twice. */
+  const customParamNames = [...new Set([...customGoal.matchAll(/\{([a-zA-Z][\w]*)\}/g)].map((m) => m[1]))];
+  const goal = isCustom
+    ? { goal: customGoal, capabilityId: customId, params: Object.fromEntries(customParamNames.map((n) => [n, ""])) }
+    : preset;
   const artifact = demo?.artifacts.find((a) => a.file === file);
 
   useEffect(() => {
@@ -36,8 +50,11 @@ export default function EntryGate({ demo, onError }) {
   }, [demo]);
 
   useEffect(() => {
-    if (mode === "discover" && goal) setParams({ ...goal.params });
-  }, [mode, goalKey, goal]);
+    if (mode !== "discover") return;
+    if (isCustom) setParams((prev) => Object.fromEntries(customParamNames.map((n) => [n, prev[n] ?? ""])));
+    else if (preset) setParams({ ...preset.params });
+    // customParamNames is derived from customGoal, so that is the dependency that matters.
+  }, [mode, goalKey, isCustom, preset, customGoal]);
 
   useEffect(() => {
     if (mode !== "replay" || !artifact) return;
@@ -47,6 +64,12 @@ export default function EntryGate({ demo, onError }) {
 
   // Required inputs with nothing in them. Checked here so the gate does not start a run that
   // pre-flight would refuse with INVALID_INPUT.
+  // A custom goal with no text, no id, or an empty parameter is a run that will fail or record a
+  // capability nobody can find again. Cheaper to refuse here than to explain the failure later.
+  const customMissing = !isCustom
+    ? []
+    : [...(customGoal.trim() ? [] : ["a description"]), ...(customId ? [] : ["a name"]), ...customParamNames.filter((n) => !params[n])];
+
   const missing =
     mode === "replay" && artifact
       ? Object.entries(artifact.inputs)
@@ -109,9 +132,37 @@ export default function EntryGate({ demo, onError }) {
                     {g.key} — {g.title} ({g.risk})
                   </option>
                 ))}
+                <option value="__custom">Something else — describe it yourself</option>
               </select>
-              <small className="muted">{goal?.goal}</small>
+              {!isCustom && <small className="muted">{goal?.goal}</small>}
             </label>
+
+            {isCustom && (
+              <>
+                <label>
+                  What should it do?
+                  <textarea
+                    rows={3}
+                    value={customGoal}
+                    placeholder="Look up member {memberId} and report which branch they belong to."
+                    onChange={(e) => setCustomGoal(e.target.value)}
+                  />
+                  <small className="muted">
+                    Plain English. Put anything that changes between runs in {"{braces}"} — that is what makes the
+                    recorded capability reusable rather than a one-off.
+                  </small>
+                </label>
+                <label>
+                  Call it
+                  <input
+                    value={customId}
+                    placeholder="member-branch-and-tenure"
+                    onChange={(e) => setCustomId(e.target.value.trim())}
+                  />
+                  <small className="muted">The capability id. The artifact is written as {"<id>@1.json"}.</small>
+                </label>
+              </>
+            )}
 
             <label>
               Model
@@ -225,10 +276,11 @@ export default function EntryGate({ demo, onError }) {
 
         {/* Starting a run that pre-flight will reject teaches the operator nothing, so the gate
             refuses first and says which field is missing. */}
-        <button className="primary big" disabled={busy || (mode === "replay" && (!file || missing.length > 0))} onClick={start}>
+        <button className="primary big" disabled={busy || (mode === "replay" && (!file || missing.length > 0)) || (mode === "discover" && customMissing.length > 0)} onClick={start}>
           {busy ? "starting…" : mode === "discover" ? "Discover" : "Replay"}
         </button>
         {missing.length > 0 && <p className="muted">Fill in {missing.join(", ")} first.</p>}
+        {customMissing.length > 0 && <p className="muted">Needs {customMissing.join(", ")}.</p>}
       </div>
     </div>
   );
