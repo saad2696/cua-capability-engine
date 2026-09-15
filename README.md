@@ -477,4 +477,5 @@ artifact declares.
 - [docs/error-taxonomy.md](./docs/error-taxonomy.md) — the four run outcomes and every failure code, with what to do about each
 - [docs/adr/](./docs/adr/) — decisions that departed from a slice's design, and what changed them
 - [docs/demo-script.md](./docs/demo-script.md) — the running order for the walkthrough video, act by act
+- [docs/demo-narration.html](./docs/demo-narration.html) — full narration, decision notes and Q&A prep (print to PDF)
 - [policy.yaml](./policy.yaml) — everything the engine is allowed to do, in one validated file
