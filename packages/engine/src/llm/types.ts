@@ -1,7 +1,7 @@
 import type { Observation } from "../surface/types.js";
 
 /** Tools the model can call. One call per turn. */
-export type ToolName = "click" | "type" | "select" | "press" | "navigate" | "extract" | "assert_state" | "done" | "give_up";
+export type ToolName = "click" | "type" | "select" | "press" | "navigate" | "extract" | "assert_state" | "dismiss_dialog" | "done" | "give_up";
 
 export interface HistoryEntry {
   step: number;

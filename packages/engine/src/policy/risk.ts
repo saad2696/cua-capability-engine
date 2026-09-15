@@ -44,6 +44,10 @@ export interface RiskSubject {
   focusInForm?: boolean;
   /** The model itself declared the step irreversible; always honoured. */
   modelFlagged?: boolean;
+  /** For `dismiss_dialog`: true accepts the dialog, false cancels it. */
+  accept?: boolean;
+  /** The text of the dialog being answered, for the operator's benefit. */
+  dialogMessage?: string;
 }
 
 export interface RiskVerdict {
@@ -95,6 +99,17 @@ export function riskClassifier(policy: RiskPolicy): RiskClassifier {
         return { risk: "safe", sideEffect: "none", reasons };
 
       if (s.modelFlagged) reasons.push("the model declared this step irreversible");
+
+      // Answering a dialog. Cancelling is always safe — it is how an agent backs out. Accepting is
+      // not: a legacy UI raises `confirm()` precisely at the point it will not let you back out of,
+      // so the accept *is* the commit. It escalates even when the click that raised the dialog was
+      // already approved, because the application's own last-chance prompt is the one a banking
+      // operator expects to be shown, and an approval given before that text appeared did not cover
+      // it. See docs/adr/0006-accepting-a-dialog-is-its-own-decision.md.
+      if (s.action === "dismiss_dialog" || s.action === "dismissDialog") {
+        if (s.accept !== true) return { risk: "safe", sideEffect: "none", reasons: ["cancelling a dialog"] };
+        reasons.push(`it accepts the dialog "${(s.dialogMessage ?? "").trim()}"`);
+      }
 
       const actionable = s.action === "click" || s.action === "press" || s.action === "navigate";
       const isControl = s.targetRole === undefined || ["button", "link", "menuitem", "tab", ""].includes(s.targetRole);

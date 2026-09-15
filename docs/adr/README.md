@@ -12,3 +12,4 @@ the code met the real target app.
 | [0003](0003-visual-drift-by-displacement.md) | Visual drift measures centre displacement, not box overlap | 006 |
 | [0004](0004-derived-run-status.md) | Run status is derived, never stored | 007 |
 | [0005](0005-text-pseudo-role.md) | A `text` pseudo-role for extraction targets with no accessible name | 006 |
+| [0006](0006-accepting-a-dialog-is-its-own-decision.md) | Accepting a dialog is its own decision, and the model needs a way to make it | 010 |

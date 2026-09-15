@@ -27,6 +27,8 @@ export interface TraceStep {
   before: ObservationSummary;
   decision: Decision;
   verdict: PolicyVerdict;
+  /** The action opened a native dialog; it acted, even though it reports not ok. */
+  raisedDialog?: boolean;
   /** Locator captured before acting (click/type/select). */
   locator?: Locator;
   /** Element the decision targeted, as observed before acting. */
@@ -113,6 +115,7 @@ function describeDecision(d: Decision, obs: Observation, params: Record<string, 
     case "type": return `type ${val(d.args["text"])} into ${el(d.args["index"])}`;
     case "select": return `select ${JSON.stringify(d.args["option"])} in ${el(d.args["index"])}`;
     case "press": return `press ${String(d.args["key"])}`;
+    case "dismiss_dialog": return `${d.args["accept"] === true ? "accept" : "dismiss"} the dialog`;
     case "navigate": return `navigate to ${String(d.args["url"])}`;
     case "extract": return `extract ${String(d.args["output"])} = ${val(d.args["value"])}`;
     case "assert_state": return `assert ${String(d.args["kind"])}: ${String(d.args["detail"])}`;
@@ -344,10 +347,21 @@ export async function runDiscovery(opts: DiscoveryOptions): Promise<Trace> {
       case "select": step.rawValue = String(decision.args["option"] ?? ""); action = { kind: "select", target: { index: idx }, value: step.rawValue }; break;
       case "press": step.rawValue = String(decision.args["key"] ?? ""); action = { kind: "press", key: step.rawValue }; break;
       case "navigate": step.rawValue = String(decision.args["url"] ?? ""); action = { kind: "navigate", url: step.rawValue }; break;
+      case "dismiss_dialog": {
+        const accept = decision.args["accept"] === true;
+        step.rawValue = accept ? "accept" : "cancel";
+        action = { kind: "dismissDialog", accept, ...(decision.args["text"] ? { text: String(decision.args["text"]) } : {}) };
+        break;
+      }
       default: continue;
     }
     const res = await surface.act(action);
     step.actOk = res.ok;
+    // A click that raises a native dialog reports `ok: false` with the dialog still open, because
+    // nothing on the page moved. For the recorder that is not a failed step: it is the step that
+    // produced the dialog, and a recorded flow that drops it would replay straight past the
+    // application's confirmation and never reach the commit at all.
+    if (!res.ok && res.error?.startsWith("dialog open:")) step.raisedDialog = true;
     if (res.error) step.actError = res.error;
     evidence.event({ type: "act", stepIndex: i, action: decision.tool, ...(targetEl ? { target: `${targetEl.role} "${targetEl.name}"` } : {}), ...(step.rawValue !== undefined && decision.tool !== "type" ? { value: step.rawValue } : {}), controller: "agent", ok: res.ok, ...(res.error ? { error: res.error } : {}) });
     const afterObs = await surface.observe();

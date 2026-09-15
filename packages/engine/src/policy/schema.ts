@@ -107,7 +107,7 @@ export const DEFAULT_POLICY: Policy = {
   version: 1,
   allowedOrigins: ["http://localhost:4100"],
   blockedUrlPatterns: ["/__faults", "/__reset", "/admin"],
-  allowedActions: ["click", "type", "select", "press", "navigate", "extract", "assert_state", "done", "give_up"],
+  allowedActions: ["click", "type", "select", "press", "navigate", "extract", "assert_state", "dismiss_dialog", "done", "give_up"],
   maxSteps: 40,
   runTimeoutMs: 300_000,
   risk: {

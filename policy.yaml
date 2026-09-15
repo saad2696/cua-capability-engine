@@ -26,7 +26,7 @@ blockedUrlPatterns:
   - "/admin"
 
 # Tools the model may call. Anything else is refused at decision time and fed back as a notice.
-allowedActions: [click, type, select, press, navigate, extract, assert_state, done, give_up]
+allowedActions: [click, type, select, press, navigate, extract, assert_state, dismiss_dialog, done, give_up]
 
 maxSteps: 40
 runTimeoutMs: 300000

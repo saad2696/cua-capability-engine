@@ -54,7 +54,9 @@ export function userText(ctx: DecisionContext): string {
   const params = Object.keys(ctx.params).length ? Object.entries(ctx.params).map(([k, v]) => `  {${k}} = ${v}`).join("\n") : "  (none)";
   const secrets = ctx.secretNames.length ? ctx.secretNames.map((s) => `  {${s}}`).join("\n") : "  (none)";
   const frames = obs.frames.filter((f) => f.path.length).map((f) => `  ${f.path.join("/")}: ${f.url}`).join("\n");
-  const dialog = obs.dialog ? `\nA native ${obs.dialog.type} dialog is OPEN: "${obs.dialog.message}". Nothing else can be interacted with until it is handled. Use assert_state(error_seen) if it is unexpected.\n` : "";
+  const dialog = obs.dialog
+    ? `\nA native ${obs.dialog.type} dialog is OPEN: "${obs.dialog.message}". Nothing else on the page can be interacted with until it is answered. If it is the expected consequence of the step you just took, answer it with dismiss_dialog. If it is unexpected, cancel it with dismiss_dialog(accept: false) and record it with assert_state(error_seen).\n`
+    : "";
   const notices = ctx.notices.length ? `\nNotices:\n${ctx.notices.map((n) => `  - ${n}`).join("\n")}\n` : "";
   return `Goal: ${ctx.goal}
 

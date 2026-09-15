@@ -88,6 +88,7 @@ export function policyGate(policy: Policy): DiscoveryPolicy {
         ...(decision.tool === "navigate" ? { url: String(decision.args["url"] ?? "") } : {}),
         ...(decision.tool === "press" ? { key: String(decision.args["key"] ?? "") } : {}),
         ...(focused && (focused.role === "textbox" || focused.role === "combobox") ? { focusInForm: true } : {}),
+        ...(decision.tool === "dismiss_dialog" ? { accept: decision.args["accept"] === true, dialogMessage: obs.dialog?.message ?? "" } : {}),
         ...(decision.args["irreversible"] === true ? { modelFlagged: true } : {}),
       };
       const verdict = classifier.classify(subject);

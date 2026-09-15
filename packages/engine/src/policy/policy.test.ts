@@ -210,6 +210,33 @@ describe("risk classification against the real target app", () => {
     expect(classify.classify({ action: "press", key: "Enter", focusInForm: false }).sideEffect).toBe("none");
   });
 
+  it("accepting a confirm dialog is risky; cancelling one never is", () => {
+    // The mock app's point of no return is a native confirm(), not a button: the click that raises
+    // it fails with the dialog still open, and the accept is what actually commits. Verified
+    // against the real app — see the G2 probe in REPORT section 3.
+    const msg = "Open this sub-account now? This action cannot be undone.";
+    const accept = classify.classify({ action: "dismiss_dialog", accept: true, dialogMessage: msg });
+    expect(accept.risk).toBe("risky");
+    expect(accept.sideEffect).toBe("committed");
+    expect(accept.reasons.join(" ")).toContain("cannot be undone");
+
+    const cancel = classify.classify({ action: "dismiss_dialog", accept: false, dialogMessage: msg });
+    expect(cancel.risk).toBe("safe");
+    expect(cancel.sideEffect).toBe("none");
+  });
+
+  it("the gate reads the pending dialog off the observation", () => {
+    const gate = basicPolicy({ allowedOrigins: ["http://localhost:4100"] });
+    const o = obs({ dialog: { type: "confirm", message: "Open this sub-account now? This action cannot be undone." } });
+    expect(gate.check(decision("dismiss_dialog", { accept: true }), o)).toMatchObject({ allow: true, risk: "risky" });
+    expect(gate.check(decision("dismiss_dialog", { accept: false }), o).risk).toBe("safe");
+  });
+
+  it("dismiss_dialog is a permitted action — a name mismatch would read as 'tool not permitted'", () => {
+    const gate = basicPolicy({ allowedOrigins: ["http://localhost:4100"] });
+    expect(gate.allowedTools.has("dismiss_dialog")).toBe(true);
+  });
+
   it("a model-declared irreversible step is honoured even when nothing else matches", () => {
     const v = classify.classify({ action: "click", targetName: "Go", modelFlagged: true });
     expect(v.risk).toBe("risky");

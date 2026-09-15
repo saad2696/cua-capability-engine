@@ -52,6 +52,12 @@ function contentUrl(o: ObservationSummary): { path: string; frame: string[] } {
 }
 
 /** Turn a concrete path into a pattern: parameter values -> `[^/?&]+`, long digit runs -> `\d+`. */
+/** The model's tool names and the artifact's action names are not the same vocabulary. */
+const ACTION_FOR_TOOL: Record<string, StepInput["action"]> = { dismiss_dialog: "dismissDialog" };
+
+/** Tools that change the application rather than read it. */
+const COMMITTING_TOOLS = new Set(["click", "press", "select", "type", "navigate", "dismiss_dialog"]);
+
 export function canonicalizePath(path: string, paramValues: string[]): string {
   let p = path.split("?")[0]!;
   for (const v of paramValues.filter(Boolean).sort((a, b) => b.length - a.length)) p = p.split(v).join(MARK);
@@ -174,8 +180,10 @@ export function recordCapability(trace: Trace, secrets: Record<string, string>, 
   const built: Built[] = [];
   for (const t of trace.steps) {
     const d = t.decision;
-    if (!["click", "type", "select", "press", "navigate", "extract"].includes(d.tool)) continue;
-    if (!t.actOk) continue; // failed/blocked actions are not part of the successful path
+    if (!["click", "type", "select", "press", "navigate", "extract", "dismiss_dialog"].includes(d.tool)) continue;
+    // Failed actions are not part of the successful path — except one that "failed" only by raising
+    // a dialog, which is exactly how this application asks for its final confirmation.
+    if (!t.actOk && !t.raisedDialog) continue;
     const el = t.element;
     let value: Value | undefined;
     let usesSecret = false;
@@ -200,20 +208,32 @@ export function recordCapability(trace: Trace, secrets: Record<string, string>, 
       }
     }
 
-    const precondition = signature(t.before, paramValues, taboo);
+    // A modal dialog is not a screen. While one is open the page behind it is not reliably
+    // readable — the accessibility snapshot still lists controls, but querying them is blocked — so
+    // landmarks recorded here match nothing on replay and the step fails WRONG_SCREEN one action
+    // short of the commit. Keep the URL and the frame, which stay readable and are what the
+    // executor needs to aim its assertions at the content frame; drop the landmarks.
+    // readable — the accessibility snapshot still lists controls, but querying them is blocked — so
+    // landmarks recorded here match nothing on replay and the step fails WRONG_SCREEN one action
+    // short of the commit. A signature must carry landmarks to be valid, so a dialog step records
+    // none at all; the executor takes its frame from the step that raised the dialog instead.
+    const precondition = d.tool === "dismiss_dialog" ? undefined : signature(t.before, paramValues, taboo);
     const expect = inferExpect(t, paramValues, value, taboo);
-    const idBase = d.tool === "extract" ? `extract-${String(d.args["output"])}` : `${d.tool}-${el ? `${el.role}-${el.name}` : d.tool}`;
+    const idBase = d.tool === "extract" ? `extract-${String(d.args["output"])}` : d.tool === "dismiss_dialog" ? `${t.rawValue === "accept" ? "accept" : "cancel"}-dialog` : `${d.tool}-${el ? `${el.role}-${el.name}` : d.tool}`;
     const step: StepInput = {
       id: uniqueId(slug(idBase)),
       intent: scrub((d.reasoning || `${d.tool} ${el?.name ?? ""}`).replace(/\s+/g, " ").trim().slice(0, 160), trace.params, secrets),
-      action: d.tool as StepInput["action"],
+      action: ACTION_FOR_TOOL[d.tool] ?? (d.tool as StepInput["action"]),
       ...(t.locator ? { target: t.locator } : {}),
       ...(value ? { value } : {}),
       ...(precondition ? { precondition } : {}),
       expect,
       wait: inferWait(t, expect),
       risk: t.verdict.risk,
-      ...(t.verdict.risk === "risky" && d.tool === "click" ? { pointOfNoReturn: true } : {}),
+      // Any risky action that actually acts commits something; restricting this to `click` meant the
+      // G2 flow — whose point of no return is accepting a confirm dialog — recorded no
+      // pointOfNoReturn at all, and so replayed with sideEffects stuck at "possible".
+      ...(t.verdict.risk === "risky" && COMMITTING_TOOLS.has(d.tool) ? { pointOfNoReturn: true } : {}),
     };
 
     if (d.tool === "extract") {

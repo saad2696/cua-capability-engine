@@ -236,6 +236,57 @@ because it trains the reader to ignore it — and this one would have been *indi
 working* in a demo, since drift never fails a run. It is only visible if you look at a passing run
 and ask why it is reporting anything at all.
 
+### The goal that could not be reached, and the five defects behind it
+
+Goal G2 — open a sub-account — could not be completed by this system at all, and the test suite was
+green. That is the single most useful thing the project found, and it was found by driving the real
+application rather than by reading code: a twenty-line script that clicked through to the point of
+no return and printed what came back.
+
+```
+{"ok":false,"error":"dialog open: confirm \"Open this sub-account now? This action cannot be undone.\""}
+```
+
+The mock takes its final approval the way legacy banking UIs do, with a native `confirm()` on the
+form. The click *fails* with the dialog still open; accepting the dialog is what opens the account.
+The model had no tool that could answer a dialog, so its only moves were to retry the click until the
+loop detector stopped it, or give up.
+
+Adding `dismiss_dialog` was the small part. What it exposed was not:
+
+1. **The recorder dropped the commit.** It skipped every step with `actOk: false` — which is the
+   dialog-raising click — and did not record `dismiss_dialog` at all. The G2 artifact came out as
+   `… Continue → extract confirmation number`: a flow that replays straight past the confirmation
+   and never opens the account, while validating cleanly against the schema.
+2. **`pointOfNoReturn` was only ever set on a risky `click`.** The committing step here is a dialog,
+   so the artifact recorded none, and a replay that opened a real account would have reported
+   `sideEffects: "possible"`. Nothing else catches this: the schema permits a risky step without it.
+3. **A modal is not a screen.** The dialog step's recorded precondition was a landmark signature of
+   the page behind it. Those landmarks appear in the accessibility snapshot but cannot be queried
+   while the dialog blocks the page, so replay failed `WRONG_SCREEN` one action short of the commit.
+4. **The dialog matched `UNKNOWN_DIALOG` on the very step that exists to answer it** — the same
+   circularity as a prelude's own recovery from slice 006, one step smaller.
+5. **Replay treated the dialog-raising click as a surface error**, ending the run before the step
+   that answers the dialog.
+
+Each of these produces a *plausible* wrong answer rather than a crash, which is why none of them
+showed up until something needed the whole path to work end to end.
+
+The design decision inside this was whether the accept needs its own approval when the click was
+already approved. It does — see [ADR 0006](./docs/adr/0006-accepting-a-dialog-is-its-own-decision.md).
+The alternative carries the approval forward so the operator is asked once, which is tempting given
+section 3's argument against double-prompting. But that argument was about a step that commits
+nothing; this is the application's own last-chance prompt, and an operator who approved a click has
+not yet seen the sentence "This action cannot be undone." Carrying it would also mean another stored
+flag whose validity depends on decision ordering, which is the shape that produced four separate
+bugs here already.
+
+**What this now proves.** `sideEffects: "committed"` was, until this point, only ever produced by a
+hand-written fixture — the weakest claim in the submission. The G2 test now runs discovery against
+the live application, records an artifact, and replays that artifact **with no model in the loop**:
+it opens a second real account and returns a different confirmation number. The claim is made by the
+system, not by a test author.
+
 ### Two things the tests found that review did not
 
 Writing a test for a branch the happy path cannot reach is how both of these surfaced, and both are

@@ -38,6 +38,17 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     input_schema: { type: "object", properties: { key: { type: "string" }, reasoning: { type: "string" } }, required: ["key", "reasoning"], additionalProperties: false },
   },
   {
+    name: "dismiss_dialog",
+    description:
+      "Answer a native browser dialog (alert, confirm or prompt) that is blocking the page. Accepting a confirm is how a legacy UI takes its final approval for an irreversible action, so accept only when the dialog is the expected consequence of the step you just took; otherwise cancel.",
+    input_schema: {
+      type: "object",
+      properties: { accept: { type: "boolean" }, text: { type: "string", description: "Reply for a prompt dialog." }, reasoning: { type: "string" } },
+      required: ["accept", "reasoning"],
+      additionalProperties: false,
+    },
+  },
+  {
     name: "navigate",
     description: "Go to a URL within the allowed origins.",
     input_schema: { type: "object", properties: { url: { type: "string" }, reasoning: { type: "string" } }, required: ["url", "reasoning"], additionalProperties: false },

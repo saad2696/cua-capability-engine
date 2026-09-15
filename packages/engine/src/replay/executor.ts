@@ -299,7 +299,13 @@ export async function replay(opts: ReplayOptions): Promise<ReplayResult> {
     // is inert while checking a precondition inside its own prelude. It stays live for postconditions:
     // seeing the sign-in screen after submitting credentials means the sign-in did not stick.
     const suppressOwn = where === "precondition" && state.activePrelude !== undefined;
-    const candidates = suppressOwn ? cap.outcomes.filter((o) => o.recover !== `prelude:${state.activePrelude}`) : cap.outcomes;
+    let candidates = suppressOwn ? cap.outcomes.filter((o) => o.recover !== `prelude:${state.activePrelude}`) : cap.outcomes;
+    // Same principle, one step smaller: a condition cannot be an anomaly for the step whose whole
+    // job is to resolve it. A `dismissDialog` step runs *because* a dialog is open, so the
+    // dialog-based outcomes — UNKNOWN_DIALOG above all — are inert while it is checked. Without
+    // this, a recorded flow whose commit is a confirm() escalates on the prompt it was recorded
+    // answering, one step short of committing.
+    if (step?.action === "dismissDialog") candidates = candidates.filter((o) => !o.detect.some((d) => d.kind === "dialogOpen"));
     const matched = matchOutcomes(candidates, s, step?.id);
     const o = matched[0];
     if (!o) return undefined;
@@ -364,7 +370,7 @@ export async function replay(opts: ReplayOptions): Promise<ReplayResult> {
     try {
     for (let i = startIndex; i < steps.length; i += 1) {
       try {
-        await runStep(steps[i]!, i, phase);
+        await runStep(steps[i]!, i, phase, steps);
       } catch (e) {
         if (e instanceof Restart && e.phase === phase) {
           restarts += 1;
@@ -402,13 +408,19 @@ export async function replay(opts: ReplayOptions): Promise<ReplayResult> {
   };
 
   // ---- one step ----
-  const runStep = async (step: Step, index: number, phase: Phase, attempt = 1): Promise<void> => {
+  const runStep = async (step: Step, index: number, phase: Phase, seq: Step[], attempt = 1): Promise<void> => {
     if (opts.signal?.aborted) await fail("CANCELLED", step, "run to continue", "cancelled by caller");
     // Ask the controller before testing the clock. shouldContinue is where a manual pause blocks, so
     // checking the deadline first would time out the run on the step right after it resumed.
     if (opts.shouldContinue && (await awaitHuman("pause", () => opts.shouldContinue!())) === "abort") await fail("CANCELLED", step, "run to continue", "aborted by session controller");
     if (Date.now() > state.deadline) await fail("RUN_TIMEOUT", step, `run within ${opts.runTimeoutMs ?? 300_000}ms`, "run budget exhausted");
-    const frame = step.target?.frame ?? step.precondition?.frames;
+    // A dialog step has neither a target nor a screen signature — a modal is not a screen — so it
+    // inherits the frame of the action that raised it, which is where the dialog belongs.
+    const prev = seq[index - 1];
+    const frame =
+      step.target?.frame ??
+      step.precondition?.frames ??
+      (step.action === "dismissDialog" ? (prev?.target?.frame ?? prev?.precondition?.frames) : undefined);
     const label = `${phase}:${step.id}`;
     log(`${label} ${step.action}${step.target ? ` ${step.target.candidates[0]?.strategy}` : ""}${step.value ? ` ${describeValue(step.value)}` : ""}`);
 
@@ -424,7 +436,7 @@ export async function replay(opts: ReplayOptions): Promise<ReplayResult> {
         const found = await classify(step, index, undefined, "precondition");
         if (found) {
           const next = await handleDetection(found, step, index, phase);
-          if (next === "rerun") return runStep(step, index, phase, attempt);
+          if (next === "rerun") return runStep(step, index, phase, seq, attempt);
         }
         const again = await checkSignature(step.precondition, surface, state.ctx);
         if (!again.ok) {
@@ -464,7 +476,7 @@ export async function replay(opts: ReplayOptions): Promise<ReplayResult> {
         const found = await classify(step, index);
         if (found) {
           const next = await handleDetection(found, step, index, phase);
-          if (next !== "continue") return runStep(step, index, phase, attempt);
+          if (next !== "continue") return runStep(step, index, phase, seq, attempt);
         }
         await fail("EXTRACTION_FAILED", step, `${step.output} via ${spec!.extract.candidates.map((c) => c.strategy).join(" → ")}`, r.error ?? "no value");
       }
@@ -483,7 +495,7 @@ export async function replay(opts: ReplayOptions): Promise<ReplayResult> {
         case "type": action = { kind: "type", target: { locator: step.target! }, text: resolveValue(step.value!, state.ctx), secret: step.value!.kind === "secret" }; break;
         case "select": action = { kind: "select", target: { locator: step.target! }, value: resolveValue(step.value!, state.ctx) }; break;
         case "press": action = { kind: "press", key: resolveValue(step.value!, state.ctx) }; break;
-        case "dismissDialog": action = { kind: "dismissDialog", accept: true }; break;
+        case "dismissDialog": action = { kind: "dismissDialog", accept: step.value ? resolveValue(step.value, state.ctx) !== "cancel" : true }; break;
       }
       // No single action may hang the run. The surface already abandons an action that a modal
       // dialog froze, but this is the backstop for anything it cannot see — a request that never
@@ -518,7 +530,7 @@ export async function replay(opts: ReplayOptions): Promise<ReplayResult> {
           const found = await classify(step, index);
           if (found) {
             const next = await handleDetection(found, step, index, phase);
-            if (next !== "continue") return runStep(step, index, phase, attempt);
+            if (next !== "continue") return runStep(step, index, phase, seq, attempt);
           }
           await fail("STEP_TIMEOUT", step, `${step.action} to return within ${step.timeoutMs}ms`, res.error);
         }
@@ -527,20 +539,29 @@ export async function replay(opts: ReplayOptions): Promise<ReplayResult> {
           const found = await classify(step, index);
           if (found) {
             const next = await handleDetection(found, step, index, phase);
-            if (next !== "continue") return runStep(step, index, phase, attempt);
+            if (next !== "continue") return runStep(step, index, phase, seq, attempt);
           }
           const obs = await surface.observe();
           await fail("LOCATOR_NOT_FOUND", step, `one of ${step.target!.candidates.map((c) => c.strategy + ("name" in c ? ` "${c.name}"` : "text" in c ? ` "${c.text}"` : "selector" in c ? ` ${c.selector}` : "")).join(" | ")} in frame ${step.target!.frame.join("/") || "(top)"}`, `visible: ${obs.elements.slice(0, 10).map((e) => `${e.role} "${e.name}"`).join(", ") || "nothing interactive"}${obs.dialog ? `; dialog open: ${obs.dialog.message}` : ""}`);
         }
         if (res.error?.startsWith("dialog open")) {
+          // A dialog this capability expects: the next recorded step is the one that answers it.
+          // The action did act — raising the prompt is what it was recorded doing — so the run
+          // carries on to that step instead of treating the dialog as an unknown condition. Without
+          // this, every replay of a flow whose commit is a confirm() stops one step short of it.
+          if (seq[index + 1]?.action === "dismissDialog") {
+            evidence.event({ type: "detect", stepId: step.id, stepIndex: index, code: "EXPECTED_DIALOG", kind: "recoverable", detail: res.error });
+            log(`  dialog raised as recorded; the next step answers it`);
+            return;
+          }
           const found = await classify(step, index);
           const next = await handleDetection(found, step, index, phase);
-          if (next !== "continue") return runStep(step, index, phase, attempt);
+          if (next !== "continue") return runStep(step, index, phase, seq, attempt);
         }
         if (res.error?.includes("blocked by policy")) await fail("NAVIGATION_BLOCKED", step, "navigation within the allowlist", res.error);
         if (isRetryable(step) && attempt < 3) {
           await new Promise((r) => setTimeout(r, BACKOFF_MS[attempt - 1]));
-          return runStep(step, index, phase, attempt + 1);
+          return runStep(step, index, phase, seq, attempt + 1);
         }
         await fail("SURFACE_ERROR", step, `${step.action} to succeed`, res.error ?? "unknown error");
       }
@@ -563,14 +584,14 @@ export async function replay(opts: ReplayOptions): Promise<ReplayResult> {
       if (!v.ok) {
         const found = await classify(step, index);
         const next = await handleDetection(found, step, index, phase);
-        if (next === "rerun") return runStep(step, index, phase, attempt);
+        if (next === "rerun") return runStep(step, index, phase, seq, attempt);
         if (next === "reverify") {
           const again = await waitForAssertion(a, surface, state.ctx, stepBudget, step.target, frame);
           if (again.ok) continue;
         }
         if (isRetryable(step) && attempt < 3) {
           await new Promise((r) => setTimeout(r, BACKOFF_MS[attempt - 1]));
-          return runStep(step, index, phase, attempt + 1);
+          return runStep(step, index, phase, seq, attempt + 1);
         }
         await fail("CHECKPOINT_FAILED", step, v.expected, v.observed);
       }
@@ -582,7 +603,7 @@ export async function replay(opts: ReplayOptions): Promise<ReplayResult> {
       const found = await classify(step, index);
       if (found) {
         const next = await handleDetection(found, step, index, phase);
-        if (next === "rerun") return runStep(step, index, phase, attempt);
+        if (next === "rerun") return runStep(step, index, phase, seq, attempt);
       }
     }
     const shot = await surface.observe();
